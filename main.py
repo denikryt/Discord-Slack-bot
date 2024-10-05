@@ -91,7 +91,7 @@ def send_message_to_discord(event, discord_channel):
     user_info = slack_client.users_info(user=user_id)
     user_name = user_info['user']['real_name']
 
-    text = f'**CHANNEL: _#{channel_name}_**\n**USER: _{user_name}_**\n {user_text}'
+    text = f'**USER: _{user_name}_**\n {user_text}'
 
     if discord_channel:
         discord_client.loop.create_task(discord_channel.send(text))
