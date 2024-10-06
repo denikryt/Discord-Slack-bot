@@ -69,15 +69,15 @@ def send_message_to_slack(message):
     user_message = str(message.content)
 
     if channel_name == 'general':
-        text = f'💂*_{user_name}_*\n {user_message}'
+        text = f'💂*_{user_name}_*\n{user_message}'
         slack_client.chat_postMessage(channel=SLACK_CHANNEL_ID_GENERAL, text=text)
 
     elif channel_name == 'random':
-        text = f'💂*_{user_name}_*\n {user_message}'
+        text = f'💂*_{user_name}_*\n{user_message}'
         slack_client.chat_postMessage(channel=SLACK_CHANNEL_ID_RANDOM, text=text)
 
     else:
-        text = f'*🔉_#{channel_name}_*\n*💂_{user_name}_*\n {user_message}'
+        text = f'💂*_{user_name}_* 🔉*_#{channel_name}_*\n{user_message}'
         slack_client.chat_postMessage(channel=SLACK_CHANNEL_ID_DISCORD, text=text)
 
 # Helper function to send message to Discord
@@ -91,7 +91,7 @@ def send_message_to_discord(event, discord_channel):
     user_info = slack_client.users_info(user=user_id)
     user_name = user_info['user']['real_name']
 
-    text = f'**💂_{user_name}_**\n {user_text}'
+    text = f'**💂_{user_name}_**\n{user_text}'
 
     if discord_channel:
         discord_client.loop.create_task(discord_channel.send(text))
