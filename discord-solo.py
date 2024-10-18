@@ -7,7 +7,7 @@ import os
 intents: Intents = Intents.default()
 intents.message_content = True 
 client: Client = Client(intents=intents)
-bot = commands.Bot(command_prefix='!', intents=intents)
+# bot = commands.Bot(command_prefix='!', intents=intents)
 
 
 @client.event
@@ -16,19 +16,37 @@ async def on_ready() -> None:
 
 @client.event
 async def on_message(message: Message) -> None:
-    if message.author == client.user:
-        return
-    
-    if message.channel.id == int(os.environ['DISCORD_TEST_CHANNEL_ID']):    
+    try:
+        if message.author == client.user:
+            return
+        
+        if message.channel.id == int(os.environ['DISCORD_CHANNEL_ID_TEST']):   
+            print('--------------') 
+            print('message', message) 
 
-        username: str = str(message.author)
-        user_message: str = str(message.content)
-        channel: str = str(message.channel)
+            username: str = str(message.author)
+            user_message: str = str(message.content)
+            channel: str = str(message.channel)
 
-        await message.channel.send(user_message)
+            # Создаём новую ветку
+            thread = await message.channel.create_thread(
+                name=f"Discussion with {username}",
+                message=message
+            )
 
-        print(f'[{channel}] {username}: "{user_message}"')
+            # Отправляем сообщение в новой ветке
+            await thread.send(user_message)
 
+            # await message.channel.send(user_message)
+
+            print(f'[{channel}] {username}: "{user_message}"')
+            
+    except Exception as e:
+        print(e)
+
+# @client.event
+# async def on_message(message: Message) -> None:
+#     message.channel.cre
 
 webserver.keep_alive()
 client.run(token=os.environ['TOKEN_DISCORD'])
