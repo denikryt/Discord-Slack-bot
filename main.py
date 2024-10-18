@@ -3,8 +3,9 @@ import re
 import os
 import slack
 import discord
+import logging
 
-from flask import Flask, request
+from flask import Flask, jsonify
 from threading import Thread
 from slackeventsapi import SlackEventAdapter
 from pymongo import MongoClient
@@ -25,23 +26,26 @@ DISCORD_CHANNEL_ID_GENERAL = os.environ.get('DISCORD_CHANNEL_ID_GENERAL')
 DISCORD_CHANNEL_ID_RANDOM = os.environ.get('DISCORD_CHANNEL_ID_RANDOM')
 DISCORD_CHANNEL_ID_TEST = os.environ.get('DISCORD_CHANNEL_ID_TEST')
 
-# Flask app to handle both Slack and Discord events
-app = Flask('')
-
 # ----------- MongoDB Configuration -----------
 mongo_client = MongoClient(os.environ['MONGO_DB'])  # MongoDB URI из переменных окружения
 db = mongo_client['HACKLAB']  # Имя базы данных
 messages_collection = db['Slack-Discord messages']  # Имя коллекции
 
+# -----------Flask app Configuration -----------
+app = Flask('')
+
+@app.errorhandler(Exception)  # Обрабатываем все исключения
+def handle_exception(error):
+    # Логируем ошибку в консоль, но не выводим детальную информацию
+    if 'Invalid request signature' in str(error):
+        return jsonify({'error': 'Invalid request signature.'}), 400
+    else:
+        logging.error(f'Unexpected error: {str(error)}')  # Логируем другие ошибки
+
 # ----------- Slack Bot Configuration -----------
 slack_event_adapter = SlackEventAdapter(os.environ['SIGNING_SECRET'], '/slack/events', app)
 slack_client = slack.WebClient(token=os.environ['SLACK_TOKEN'])
 BOT_ID = slack_client.api_call("auth.test")['user_id']
-
-@app.route('/slack/events', methods=['POST'])
-def slack_events():
-    print("Headers:", request.headers)  # Log incoming headers
-    return slack_event_adapter.handle(request)
 
 @slack_event_adapter.on('message')
 def message(payload):
