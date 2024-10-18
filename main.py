@@ -4,7 +4,7 @@ import os
 import slack
 import discord
 
-from flask import Flask
+from flask import Flask, request
 from threading import Thread
 from slackeventsapi import SlackEventAdapter
 from pymongo import MongoClient
@@ -37,6 +37,11 @@ messages_collection = db['Slack-Discord messages']  # Имя коллекции
 slack_event_adapter = SlackEventAdapter(os.environ['SIGNING_SECRET'], '/slack/events', app)
 slack_client = slack.WebClient(token=os.environ['SLACK_TOKEN'])
 BOT_ID = slack_client.api_call("auth.test")['user_id']
+
+@app.route('/slack/events', methods=['POST'])
+def slack_events():
+    print("Headers:", request.headers)  # Log incoming headers
+    return slack_event_adapter.handle(request)
 
 @slack_event_adapter.on('message')
 def message(payload):
