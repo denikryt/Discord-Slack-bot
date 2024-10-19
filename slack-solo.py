@@ -1,9 +1,10 @@
-import slack
 import os
-from flask import Flask, jsonify
-from slackeventsapi import SlackEventAdapter
+from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 from pathlib import Path
+from slack_sdk import WebClient
+from slack_sdk.errors import SlackApiError
+from slack_sdk.signature import SignatureVerifier
 import logging
 
 env_path = Path('.') / '.env'
@@ -12,36 +13,38 @@ load_dotenv(dotenv_path=env_path)
 app = Flask(__name__)
 
 SLACK_CHANNEL_ID_TEST = os.environ.get('SLACK_CHANNEL_ID_TEST')
+SIGNING_SECRET = os.environ.get('SIGNING_SECRET')
+SLACK_TOKEN = os.environ.get('SLACK_TOKEN')
 
-print('SIGNING_SECRET', os.environ['SIGNING_SECRET'])
-print('SLACK_TOKEN', os.environ['SLACK_TOKEN'])
+slack_client = WebClient(token=SLACK_TOKEN)
+signature_verifier = SignatureVerifier(signing_secret=SIGNING_SECRET)
+BOT_ID = slack_client.auth_test()['user_id']
 
-slack_event_adapter = SlackEventAdapter(os.environ.get('SIGNING_SECRET'), '/slack/events', app)
-slack_client = slack.WebClient(token=os.environ.get('SLACK_TOKEN'))
-BOT_ID = slack_client.api_call("auth.test")['user_id']
+@app.route('/slack/events', methods=['POST'])
+def slack_events():
+    data = request.json
 
-@app.errorhandler(Exception)  # Обрабатываем все исключения
-def handle_exception(error):
-    # Логируем ошибку в консоль, но не выводим детальную информацию
-    if 'Invalid request signature' in str(error):
-        return jsonify({'error': 'Invalid request signature.'}), 400
-    else:
-        logging.error(f'Unexpected error: {str(error)}')  # Логируем другие ошибки
-        return jsonify({'error': 'An unexpected error occurred.'}), 500
+    # Сначала проверяем, если это событие url_verification
+    if data.get('type') == 'url_verification':
+        return jsonify({'challenge': data.get('challenge')}), 200
 
-@slack_event_adapter.on('message')
-def message(payload):
-    event = payload.get('event', {})
-    channel_id = event.get('channel')
-    user_id = event.get('user')
-    text = event.get('text')
-    # thread_ts = event.get('thread_ts') or event.get('ts')
-    # channel_id = event.get('channel')
+    # Validate the request signature
+    if not signature_verifier.is_valid_request(request.get_data(), request.headers):
+        return jsonify({"error": "invalid request"}), 403
+    
+    if 'event' in data:
+        event = data['event']
+        channel_id = event.get('channel')
+        user_id = event.get('user')
+        text = event.get('text')
 
-    if user_id != BOT_ID:
-        if channel_id == SLACK_CHANNEL_ID_TEST:
-            slack_client.chat_postMessage(channel=channel_id, text=text) 
-            return
+        if user_id and user_id != BOT_ID and channel_id == SLACK_CHANNEL_ID_TEST:
+            try:
+                slack_client.chat_postMessage(channel=channel_id, text=text)
+            except SlackApiError as e:
+                logging.error(f"Error posting message: {e.response['error']}")
+
+    return jsonify({'status': 'ok'}), 200
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)

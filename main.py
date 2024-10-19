@@ -1,21 +1,25 @@
 import asyncio
 import re
 import os
-import slack
 import discord
-import logging
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from threading import Thread
-from slackeventsapi import SlackEventAdapter
 from pymongo import MongoClient
 from discord import Intents, Client, Message, Forbidden, MessageType
 from discord.ext import commands
 from dotenv import load_dotenv
 from pathlib import Path
+from slack_sdk import WebClient
+from slack_sdk.errors import SlackApiError
+from slack_sdk.signature import SignatureVerifier
 
 env_path = Path('.') / '.env'
 load_dotenv(dotenv_path=env_path)
+
+SLACK_TOKEN = os.environ.get('SLACK_TOKEN')
+SIGNING_SECRET = os.environ.get('SIGNING_SECRET')
+TOKEN_DISCORD = os.environ.get('TOKEN_DISCORD')
 
 SLACK_CHANNEL_ID_GENERAL = os.environ.get('SLACK_CHANNEL_ID_GENERAL')
 SLACK_CHANNEL_ID_RANDOM = os.environ.get('SLACK_CHANNEL_ID_RANDOM')
@@ -34,29 +38,32 @@ messages_collection = db['Slack-Discord messages']  # Имя коллекции
 # -----------Flask app Configuration -----------
 app = Flask('')
 
-@app.errorhandler(Exception)  # Обрабатываем все исключения
-def handle_exception(error):
-    # Логируем ошибку в консоль, но не выводим детальную информацию
-    if 'Invalid request signature' in str(error):
-        return jsonify({'error': 'Invalid request signature.'}), 400
-    else:
-        logging.error(f'Unexpected error: {str(error)}')  # Логируем другие ошибки
-
 # ----------- Slack Bot Configuration -----------
-slack_event_adapter = SlackEventAdapter(os.environ['SIGNING_SECRET'], '/slack/events', app)
-slack_client = slack.WebClient(token=os.environ['SLACK_TOKEN'])
+slack_client = WebClient(token=SLACK_TOKEN)
+signature_verifier = SignatureVerifier(signing_secret=SIGNING_SECRET)
 BOT_ID = slack_client.api_call("auth.test")['user_id']
 
-@slack_event_adapter.on('message')
-def message(payload):
-    event = payload.get('event', {})
+@app.route("/slack/events", methods=["POST"])
+def slack_events():
+    # Validate the request signature
+    if not signature_verifier.is_valid_request(request.get_data(), request.headers):
+        return jsonify({"error": "invalid request"}), 403
+
+    # Handle URL verification challenge
+    event_data = request.json
+
+    if "type" in event_data and event_data["type"] == "url_verification":
+        return jsonify({"challenge": event_data["challenge"]})
+    
+    # Process event data
+    event = event_data.get("event", {})
     user_id = event.get('user')
     channel_id = event.get('channel')
     
     print('NEW MESSAGE FROM SLACK', event.get('text'))
 
     if event.get('text') == None:
-        return
+        return jsonify({"status": "no text found"})
 
     if user_id != BOT_ID:
         if channel_id == SLACK_CHANNEL_ID_GENERAL:
@@ -73,7 +80,7 @@ def message(payload):
 
         else:
             print('SLACK - MESSAGE FROM OTHER CHANNEL')
-            return
+            return jsonify({"status": "channel not handled"})
         
         if event.get('thread_ts'):
             print('SLACK - MESSAGE IN THREAD, MESSAGE_ID', event.get('thread_ts'))
@@ -92,6 +99,11 @@ def message(payload):
             send_new_message_to_discord(event, discord_channel=discord_channel, slack_message_id=event.get('ts'))
         else:
             print('UNKNOWN MESSAGE FROM SLACK')
+            return jsonify({"status": "unknown message type"})
+
+        return jsonify({"status": "ok"})
+    
+    return jsonify({"status": "ignored"})
 
 # ----------- Discord Bot Configuration -----------
 intents = Intents.default()
@@ -323,4 +335,4 @@ def keep_alive():
 
 # Keep the server alive and run both bots
 keep_alive()
-discord_client.run(os.environ['TOKEN_DISCORD'])
+discord_client.run(TOKEN_DISCORD)
