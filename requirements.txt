@@ -38,10 +38,10 @@ psutil==6.1.0
 pure_eval==0.2.3
 pyee==11.1.1
 Pygments==2.18.0
-# pymongo==4.10.1
+pymongo==4.10.1
 python-dateutil==2.9.0.post0
 python-dotenv==1.0.1
-pywin32==308
+# pywin32==308
 PyYAML==6.0.2
 pyzmq==26.2.0
 six==1.16.0
