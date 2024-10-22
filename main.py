@@ -60,12 +60,12 @@ def slack_events():
     user_id = event.get('user')
     channel_id = event.get('channel')
     
-    print('NEW MESSAGE FROM SLACK', event.get('text'))
-
     if event.get('text') == None:
         return jsonify({"status": "no text found"})
 
     if user_id != BOT_ID:
+        print('NEW MESSAGE FROM SLACK', event.get('text'))
+        
         if channel_id == SLACK_CHANNEL_ID_GENERAL:
             print('SLACK - MESSAGE FROM GENERAL')
             discord_channel = discord_client.get_channel(int(DISCORD_CHANNEL_ID_GENERAL))
