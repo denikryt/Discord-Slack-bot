@@ -222,7 +222,7 @@ def choose_channel(message):
     user_message = format_mentions(message)
     user_name = message.author.display_name
 
-    channels = ['general', 'random', 'tests']
+    channels = ['general', 'random', 'tests', 'made-in-hacklab']
 
     if channel_name in channels:
         if channel_name == 'general':
