@@ -245,6 +245,12 @@ def choose_channel(message):
             channel_to_send = config.SLACK_CHANNEL_TEST
             text = f'💂*_{user_name}_*\n{user_message}'
 
+        elif channel_name == 'made-in-hacklab':
+            logger(f'DISCORD - MESSAGE FROM - #{channel_name}')
+
+            channel_to_send = config.SLACK_CHANNEL_MADE_IN_HACKLAB
+            text = f'💂*_{user_name}_*\n{user_message}'
+
         return channel_to_send, text 
     
     else:
