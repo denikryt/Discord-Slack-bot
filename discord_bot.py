@@ -92,7 +92,9 @@ async def send_new_message_to_slack(message: Message):
         ) 
         slack_message_id = response['ts']
     
-    channel_name = slack_client.conversations_info(channel=channel_to_send)
+    result = slack_client.conversations_info(channel=channel_to_send)
+    channel_name = result['channel']['name']
+
     logger(f'Message sent to Slack channel {channel_name}!')
 
     if slack_message_id:
@@ -187,7 +189,8 @@ async def send_thread_message_to_slack(message: Message):
             ) 
 
         if response.get('ok'): 
-            channel_name = slack_client.conversations_info(channel=channel_to_send)
+            result = slack_client.conversations_info(channel=channel_to_send)
+            channel_name = result['channel']['name']
 
             logger(f'Thread message sent to Slack: {channel_name}')
             logger("---> 'send_thread_message_to_slack' func is done")
@@ -236,21 +239,23 @@ def choose_channel(message):
             text = f'💂*_{user_name}_*\n{user_message}'
             # return
 
-        elif channel_name == 'test-bot-channel':
+        elif channel_name == 'tests':
             logger(f'DISCORD - MESSAGE FROM - #{channel_name}')
 
             channel_to_send = config.SLACK_CHANNEL_TEST
             text = f'💂*_{user_name}_*\n{user_message}'
+
+        return channel_to_send, text 
     
     else:
         logger(f'DISCORD - MESSAGE FROM OTHER CHANNEL - #{channel_name}')
-
-        channel_to_send = config.SLACK_CHANNEL_DISCORD
-        text = f'💂*_{user_name}_* 🔉*_#{channel_name}_*\n{user_message}'
-        if channel_name == None:
+        if channel_name != None:
+            channel_to_send = config.SLACK_CHANNEL_DISCORD
+            text = f'💂*_{user_name}_* 🔉*_#{channel_name}_*\n{user_message}'
+            return channel_to_send, text
+        else:
+            logger('UNKNOWN CHANNEL NAME')
             return
-
-    return channel_to_send, text
 
 async def collect_files(message):
     # Download images to disk
