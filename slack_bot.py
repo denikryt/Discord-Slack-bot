@@ -93,7 +93,7 @@ async def slack_message_operator_async(event):
         logger(f'SLACK - MESSAGE FROM - #{channel_name}')
         discord_channel = discord_client.get_channel(int(config.DISCORD_CHANNEL_MADE_IN_HACKLAB))
 
-    if channel_id == config.SLACK_CHANNEL_TEST:
+    elif channel_id == config.SLACK_CHANNEL_TEST:
         logger(f'SLACK - MESSAGE FROM - #{channel_name}')
         discord_channel = discord_client.get_channel(int(config.DISCORD_CHANNEL_TEST))
 
