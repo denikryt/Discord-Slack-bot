@@ -27,18 +27,18 @@ async def on_message(message: Message):
 
     # Проверяем тип канала
     if isinstance(message.channel, discord.TextChannel):
-        logger('\n%s-------DISCORD - NEW MESSAGE-------')
+        logger('\n-------DISCORD - NEW MESSAGE-------')
         result = await send_new_message_to_slack(message)
         return result
 
     elif isinstance(message.channel, discord.Thread):
         if message.type == MessageType.default:
-            logger('\n%s-------DISCORD - THREAD MESSAGE-------')
+            logger('\n-------DISCORD - THREAD MESSAGE-------')
             result = await send_thread_message_to_slack(message)
             return result
 
         elif message.type == MessageType.reply:
-            logger('\n%s-------DISCORD - REPLY MESSAGE IN THREAD-------')
+            logger('\n-------DISCORD - REPLY MESSAGE IN THREAD-------')
             
             # Получение ссылки на сообщение, на которое был дан ответ
             replied_message = await message.channel.fetch_message(message.reference.message_id)
@@ -217,7 +217,7 @@ def choose_channel(message):
     user_message = format_mentions(message)
     user_name = message.author.display_name
 
-    channels = ['general', 'random', 'test-bot-channel']
+    channels = ['general', 'random', 'tests']
 
     if channel_name in channels:
         if channel_name == 'general':
