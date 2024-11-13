@@ -91,9 +91,9 @@ async def send_new_message_to_slack(message: Message):
             text=text
         ) 
         slack_message_id = response['ts']
-
-    logger(f'Message sent to Slack channel {channel_to_send}!')
-    # print(f"Messages ID - {slack_message_id} : {discord_message_id}")
+    
+    channel_name = slack_client.conversations_info(channel=channel_to_send)
+    logger(f'Message sent to Slack channel {channel_name}!')
 
     if slack_message_id:
         db.save_message_to_db(slack_message_id, discord_message_id)
@@ -187,7 +187,9 @@ async def send_thread_message_to_slack(message: Message):
             ) 
 
         if response.get('ok'): 
-            logger('Thread message sent to Slack')
+            channel_name = slack_client.conversations_info(channel=channel_to_send)
+
+            logger(f'Thread message sent to Slack: {channel_name}')
             logger("---> 'send_thread_message_to_slack' func is done")
 
             return json.dumps({"status":"ok"})  
