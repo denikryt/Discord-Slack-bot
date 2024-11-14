@@ -11,6 +11,7 @@ import time
 import re
 import json
 import logging
+from config import DISCORD_CHANNELS_DICT
 
 intents = Intents.default()
 intents.message_content = True 
@@ -27,18 +28,18 @@ async def on_message(message: Message):
 
     # Проверяем тип канала
     if isinstance(message.channel, discord.TextChannel):
-        logger('\n-------DISCORD - NEW MESSAGE-------')
+        logger(f'\n-------DISCORD - NEW MESSAGE-------\n---> {message.content}')
         result = await send_new_message_to_slack(message)
         return result
 
     elif isinstance(message.channel, discord.Thread):
         if message.type == MessageType.default:
-            logger('\n-------DISCORD - THREAD MESSAGE-------')
+            logger(f'\n-------DISCORD - THREAD MESSAGE-------\n---> {message.content}')
             result = await send_thread_message_to_slack(message)
             return result
 
         elif message.type == MessageType.reply:
-            logger('\n-------DISCORD - REPLY MESSAGE IN THREAD-------')
+            logger(f'\n-------DISCORD - REPLY MESSAGE IN THREAD-------\n---> {message.content}')
             
             # Получение ссылки на сообщение, на которое был дан ответ
             replied_message = await message.channel.fetch_message(message.reference.message_id)
@@ -95,7 +96,7 @@ async def send_new_message_to_slack(message: Message):
     result = slack_client.conversations_info(channel=channel_to_send)
     channel_name = result['channel']['name']
 
-    logger(f'Message sent to Slack channel {channel_name}!')
+    logger(f'New message sent to Slack: #{channel_name}!')
 
     if slack_message_id:
         db.save_message_to_db(slack_message_id, discord_message_id)
@@ -150,8 +151,6 @@ async def send_thread_message_to_slack(message: Message):
     discord_parent_message = await message.channel.parent.fetch_message(message.channel.id)
     discord_parent_message_id = discord_parent_message.id
 
-    logger(f'DISCORD - PARENT MESSAGE ID: {discord_parent_message_id}')
-
     result = db.messages_collection.find_one({"discord_message_id": discord_parent_message_id})
     slack_parent_message_id = result['slack_message_id'] if result else None
 
@@ -192,7 +191,7 @@ async def send_thread_message_to_slack(message: Message):
             result = slack_client.conversations_info(channel=channel_to_send)
             channel_name = result['channel']['name']
 
-            logger(f'Thread message sent to Slack: {channel_name}')
+            logger(f'Thread message sent to Slack: #{channel_name}')
             logger("---> 'send_thread_message_to_slack' func is done")
 
             return json.dumps({"status":"ok"})  
@@ -214,46 +213,29 @@ def format_mentions(message):
         return user_message
 
 def choose_channel(message):
+    # Получаем имя канала
     if hasattr(message.channel, 'parent'):
         channel_name = str(message.channel.parent)
+        channel_id = str(message.channel.parent.id)
     else:
         channel_name = message.channel.name
+        channel_id = str(message.channel.id)
 
     user_message = format_mentions(message)
     user_name = message.author.display_name
 
-    channels = ['general', 'random', 'tests', 'made-in-hacklab']
+    logger(f'Message from user: {user_name}')
+    logger(f'Message in channel: {channel_name}, ID: {channel_id}')
 
-    if channel_name in channels:
-        if channel_name == 'general':
-            logger(f'DISCORD - MESSAGE FROM - #{channel_name}')
+    # Проверка наличия канала в словаре и создание текста для отправки
+    if channel_id in DISCORD_CHANNELS_DICT:
+        slack_channel = DISCORD_CHANNELS_DICT[channel_id]
 
-            channel_to_send = config.SLACK_CHANNEL_GENERAL
-            text = f'💂*_{user_name}_*\n{user_message}'
-            # return 
-
-        elif channel_name == 'random':
-            logger(f'DISCORD - MESSAGE FROM - #{channel_name}')
-
-            channel_to_send = config.SLACK_CHANNEL_RANDOM
-            text = f'💂*_{user_name}_*\n{user_message}'
-            # return
-
-        elif channel_name == 'tests':
-            logger(f'DISCORD - MESSAGE FROM - #{channel_name}')
-
-            channel_to_send = config.SLACK_CHANNEL_TEST
-            text = f'💂*_{user_name}_*\n{user_message}'
-
-        elif channel_name == 'made-in-hacklab':
-            logger(f'DISCORD - MESSAGE FROM - #{channel_name}')
-
-            channel_to_send = config.SLACK_CHANNEL_MADE_IN_HACKLAB
-            text = f'💂*_{user_name}_*\n{user_message}'
-
-        return channel_to_send, text 
+        text = f'💂*_{user_name}_*\n{user_message}'
+        return slack_channel, text 
     
     else:
+        return
         logger(f'DISCORD - MESSAGE FROM OTHER CHANNEL - #{channel_name}')
         if channel_name != None:
             channel_to_send = config.SLACK_CHANNEL_DISCORD
