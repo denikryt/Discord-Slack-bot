@@ -376,13 +376,12 @@ def format_mentions(event):
                 mention_info = slack_client.users_info(user=mention)
                 mention_name = mention_info['user']['real_name']
                 user_text = user_text.replace(f'<@{mention}>', f'@{mention_name}')
-                return user_text
             except Exception as e:
                 # Логируем ошибку, если не удалось получить информацию о пользователе
                 logger(f"Ошибка при получении информации для {mention}: {e}")
     else:
         logger("Упоминаний не найдено.")
-        return user_text
+    return user_text
     
 def split_text_by_parts(text, max_length):
     parts = []
