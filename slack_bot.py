@@ -22,16 +22,14 @@ processed_files = set()
 file_timestamps = {}  # Словарь для хранения времени добавления файлов
 EXPIRATION_TIME = 300  # Время жизни записи в секундах (например, 5 минут)
 
-def slack_events():
+def slack_events(event_data):
     global processed_files
     # print('\n------ REQUEST ------\n', json.dumps(request.json, indent=4))
 
     # Validate the request signature
-    if not signature_verifier.is_valid_request(request.get_data(), request.headers):
-        logging.error("Invalid request signature")
-        return jsonify({"error": "invalid request"}), 403
-
-    event_data = request.json
+    # if not signature_verifier.is_valid_request(request.get_data(), request.headers):
+    #     logging.error("Invalid request signature")
+    #     return jsonify({"error": "invalid request"}), 403
 
     if "type" in event_data and event_data["type"] == "url_verification":
         logging.error("Challenge verification accepted")

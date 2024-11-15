@@ -1,10 +1,12 @@
-from flask import Flask, request, Response
+from flask import Flask, request, Response, jsonify
 from threading import Thread
-from slack_bot import slack_events
-from discord_bot import discord_client
 import os
 import logging
 import json
+import queue
+from slack_bot import slack_events
+from discord_bot import discord_client
+import time
 
 # Настройка основного логгера
 logging.basicConfig(
@@ -23,6 +25,9 @@ http_logger.addHandler(http_handler)
 http_logger.setLevel(logging.INFO)
 
 app = Flask(__name__)
+
+# Очередь для обработки запросов
+request_queue = queue.Queue()
 
 def format_json(data):
     try:
@@ -63,16 +68,37 @@ def home():
     return 'Both bots are running'
 
 # Flask route for Slack events
-app.add_url_rule('/slack/events', view_func=slack_events, methods=['POST'])
+@app.route('/slack/events', methods=['POST'])
+def slack_event_handler():
+    # Добавляем запрос в очередь
+    request_queue.put(request.json)
+    
+    # Немедленно отправляем ответ
+    return jsonify({"status": "received"})
+
+def process_queue():
+    while True:
+        if not request_queue.empty():
+            event_data = request_queue.get()
+            # Используем app.app_context() для обработки в контексте приложения Flask
+            with app.app_context():
+                slack_events(event_data)  # Обрабатываем запрос
+            request_queue.task_done()
+        time.sleep(5)
 
 # Start Flask server in a separate thread
 def run():
     app.run(host="0.0.0.0", port=5000)
-    
+
 def keep_alive():
     t = Thread(target=run)
     t.start()
 
 if __name__ == '__main__':
     keep_alive()
+    # Запускаем поток для обработки очереди
+    queue_processor = Thread(target=process_queue)
+    queue_processor.daemon = True
+    queue_processor.start()
+    
     discord_client.run(os.environ['TOKEN_DISCORD'])
