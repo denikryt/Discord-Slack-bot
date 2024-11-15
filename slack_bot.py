@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, current_app
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from slack_sdk.signature import SignatureVerifier
@@ -24,27 +24,28 @@ file_timestamps = {}  # Словарь для хранения времени д
 EXPIRATION_TIME = 300  # Время жизни записи в секундах (например, 5 минут)
 
 def process_event(event):
-    # Здесь идет обработка события
-    user_id = event.get('user')
+    with current_app.app_context():
+        # Здесь идет обработка события
+        user_id = event.get('user')
 
-    if user_id != BOT_ID:
-        if event.get('subtype') == 'file_share':
-            if not check_file_id_existance(event):
-                logger(f"""\n-------NEW FILE MESSAGE FROM SLACK-------\n---> {event.get('text')}""")
+        if user_id != BOT_ID:
+            if event.get('subtype') == 'file_share':
+                if not check_file_id_existance(event):
+                    logger(f"""\n-------NEW FILE MESSAGE FROM SLACK-------\n---> {event.get('text')}""")
+                    slack_message_operator(event)
+                else:
+                    logger('file_share request ignored')
+
+            elif event.get('subtype') == 'file_change':
+                logger("file_change request ignored.")
+            
+            elif event.get('text') is not None:
+                logger(f"""\n-------NEW TEXT MESSAGE FROM SLACK-------\n---> {event.get('text')}""")
                 slack_message_operator(event)
             else:
-                logger('file_share request ignored')
-
-        elif event.get('subtype') == 'file_change':
-            logger("file_change request ignored.")
-        
-        elif event.get('text') is not None:
-            logger(f"""\n-------NEW TEXT MESSAGE FROM SLACK-------\n---> {event.get('text')}""")
-            slack_message_operator(event)
+                logger("No text found")
         else:
-            logger("No text found")
-    else:
-        logger('Request from this bot!')
+            logger('Request from this bot!')
 
 def slack_events():
     global processed_files
