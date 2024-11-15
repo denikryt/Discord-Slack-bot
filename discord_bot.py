@@ -235,7 +235,7 @@ def choose_channel(message):
         return slack_channel, text 
     
     else:
-        return
+        # return
         logger(f'DISCORD - MESSAGE FROM OTHER CHANNEL - #{channel_name}')
         if channel_name != None:
             channel_to_send = config.SLACK_CHANNEL_DISCORD
