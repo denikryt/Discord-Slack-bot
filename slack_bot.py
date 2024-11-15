@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, current_app
+from flask import Flask, jsonify, request
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from slack_sdk.signature import SignatureVerifier
@@ -13,7 +13,6 @@ import discord
 import time
 import json
 import logging
-import threading
 
 slack_client = WebClient(token=SLACK_TOKEN)
 signature_verifier = SignatureVerifier(signing_secret=SIGNING_SECRET)
@@ -23,33 +22,11 @@ processed_files = set()
 file_timestamps = {}  # Словарь для хранения времени добавления файлов
 EXPIRATION_TIME = 300  # Время жизни записи в секундах (например, 5 минут)
 
-def process_event(event):
-    with current_app.app_context():
-        # Здесь идет обработка события
-        user_id = event.get('user')
-
-        if user_id != BOT_ID:
-            if event.get('subtype') == 'file_share':
-                if not check_file_id_existance(event):
-                    logger(f"""\n-------NEW FILE MESSAGE FROM SLACK-------\n---> {event.get('text')}""")
-                    slack_message_operator(event)
-                else:
-                    logger('file_share request ignored')
-
-            elif event.get('subtype') == 'file_change':
-                logger("file_change request ignored.")
-            
-            elif event.get('text') is not None:
-                logger(f"""\n-------NEW TEXT MESSAGE FROM SLACK-------\n---> {event.get('text')}""")
-                slack_message_operator(event)
-            else:
-                logger("No text found")
-        else:
-            logger('Request from this bot!')
-
 def slack_events():
     global processed_files
+    # print('\n------ REQUEST ------\n', json.dumps(request.json, indent=4))
 
+    # Validate the request signature
     if not signature_verifier.is_valid_request(request.get_data(), request.headers):
         logging.error("Invalid request signature")
         return jsonify({"error": "invalid request"}), 403
@@ -60,9 +37,36 @@ def slack_events():
         logging.error("Challenge verification accepted")
         return jsonify({"challenge": event_data["challenge"]})
 
-    # Немедленный ответ клиенту
-    threading.Thread(target=process_event, args=(event_data.get("event", {}),)).start()
-    return jsonify({"status": "received"})  # Отправить немедленный ответ клиенту
+    event = event_data.get("event", {})
+    user_id = event.get('user')
+
+    if user_id != BOT_ID:
+        # Проверяем, если это запрос типа file_share
+        if event.get('subtype') == 'file_share':
+            if not check_file_id_existance(event):
+                # Обрабатываем первый запрос типа file_share
+                    logger(f"""\n-------NEW FILE MESSAGE FROM SLACK-------\n---> {event.get('text')}""")
+                    slack_message_operator(event)
+                    return jsonify({"status": "file sent"})
+            else:
+                logger('file_share request ignored')
+                return jsonify({"status": "file_share request ignored"})
+
+        # Игнорируем все запросы типа file_change
+        elif event_data['event'].get('subtype') == 'file_change':
+            logger("file_change request ignored.")
+            return jsonify({"status": "file_change request ignored."})
+
+        elif event.get('text') != None:
+            logger(f"""\n-------NEW TEXT MESSAGE FROM SLACK-------\n---> {event.get('text')}""")
+            slack_message_operator(event)
+            return jsonify({"status": "ok"})
+        
+        else:
+            return jsonify({"status": "no text found"})
+    else:
+        logger('Request from this bot!')
+        return jsonify({"status": "bot text"})
 
 #------------------------------------------
 # Helper functions to send message to Discord
