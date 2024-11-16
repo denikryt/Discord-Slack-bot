@@ -28,12 +28,12 @@ EXPIRATION_TIME = 300  # Время жизни записи в секундах 
 def cleanup_expired_requests():
     global processed_requests
 
-    logger(f"processed_requests before cleanup: \n{processed_requests}")
+    # logger(f"processed_requests before cleanup: \n{processed_requests}")
     now = datetime.now()
     expired_keys = [key for key, timestamp in processed_requests.items() if now >= timestamp + timedelta(minutes=5)]
     for key in expired_keys:
         del processed_requests[key]
-    logger(f"processed_requests after cleanup: \n{processed_requests}")
+    # logger(f"processed_requests after cleanup: \n{processed_requests}")
 
 # Функция проверки существования и добавления новых запросов
 def check_request_existence(request_id):
@@ -42,12 +42,10 @@ def check_request_existence(request_id):
     cleanup_expired_requests()
     now = datetime.now()
     if request_id in processed_requests:
-        logger('Request saved already!')
         return True  # Запрос уже существует
     else:
         processed_requests[request_id] = now  # Сохранение нового запроса
-        logger('New request!')
-        logger(f'processed_requests: \n{processed_requests}')
+        # logger(f'processed_requests: \n{processed_requests}')
 
         return False  # Запрос новый
 
@@ -70,6 +68,7 @@ async def slack_events(event_data):
 
     if user_id != BOT_ID:
         if event_id and not check_request_existence(event_id):
+            logger('New request!')
             # Проверяем, если это запрос типа file_share
             if event.get('subtype') == 'file_share':
                 if not check_file_id_existance(event):
@@ -96,7 +95,8 @@ async def slack_events(event_data):
             else:
                 return #jsonify({"status": "no text found"})
         else:
-            logger('Ti!')
+            logger('Request saved already!')
+
 
     else:
         logger('Request from this bot!')
