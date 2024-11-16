@@ -3,87 +3,104 @@ from slack_bot import slack_events
 from discord_bot import discord_client
 import logging
 import os
-import json
-import asyncio
 from threading import Thread
-from starlette.responses import StreamingResponse
+import json
 
-# Настройка основного логгера
+# Очистка содержимого файла app.log при запуске программы
+with open('app.log', 'w', encoding='utf-8'):
+    pass  # Открываем файл в режиме записи, чтобы очистить его
+
 logging.basicConfig(
+    filename='app.log',
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[logging.FileHandler("app.log", mode='w', encoding="utf-8")]
+    encoding='utf-8',
 )
-
-# Настройка логгера для HTTP-запросов
-http_logger = logging.getLogger("http_logger")
-http_handler = logging.FileHandler("http_requests.log", mode='w', encoding="utf-8")
-http_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
-http_logger.addHandler(http_handler)
-http_logger.setLevel(logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-async def format_json(data):
-    """Функция для форматирования JSON данных с отступами."""
+
+def format_json(data):
     try:
         parsed = json.loads(data)
         return json.dumps(parsed, indent=4, ensure_ascii=False)
     except (json.JSONDecodeError, TypeError):
-        return data  # Если данные не являются JSON, возвращаем как есть
+        return data  # Если не JSON, вернуть как есть
 
 @app.middleware("http")
-async def log_request(request: Request, call_next):
+async def log_requests(request: Request, call_next):
     body = await request.body()
-    formatted_body = await format_json(body) if body else "No body"
-    headers = json.dumps(dict(request.headers), indent=4, ensure_ascii=False)
+    try:
+        event_data = json.loads(body)
+        # Проверка на наличие bot_id, чтобы не логировать запросы от бота
+        if event_data.get('event', {}).get('bot_id'):
+            response = await call_next(request)
+            return response
+    except (json.JSONDecodeError, TypeError):
+        pass  # Если тело не является JSON, продолжаем обработку как есть
 
-    http_logger.info(
-        f"Incoming request:\n"
-        f"Method: {request.method}\n"
-        f"URL: {request.url}\n"
-        f"Headers:\n{headers}\n"
-        f"Body:\n{formatted_body}"
-    )
+    formatted_body = format_json(body) if body else "No body"
+    logger.info(f"Incoming request: {request.method} {request.url} - Body: {formatted_body}")
     
     response = await call_next(request)
     
-    # Check if the response is a StreamingResponse
-    if isinstance(response, StreamingResponse):
-        # For StreamingResponse, do not attempt to access the body, as it is streamed
-        formatted_response = "Streaming response, no body"
-    else:
-        # For non-streaming responses, try to access the body
-        try:
-            formatted_response = await format_json(await response.body())
-        except Exception as e:
-            formatted_response = f"Error formatting response body: {str(e)}"
-
-    headers = json.dumps(dict(response.headers), indent=4, ensure_ascii=False)
-
-    http_logger.info(
-        f"Outgoing response:\n"
-        f"Status: {response.status_code}\n"
-        f"Headers:\n{headers}\n"
-        f"Body:\n{formatted_response}"
-    )
+    logger.info(f"Outgoing response: Status code {response.status_code}")
     
     return response
 
 
-
 @app.get('/')
 async def home():
+    logger.info("Home endpoint accessed")
     return 'Both bots are running'
 
 @app.post('/slack/events')
 async def slack_events_handler(request: Request, background_tasks: BackgroundTasks):
     event_data = await request.json()
 
-    # Немедленно отправляем ответ, пока продолжаем обработку в фоновом режиме
-    background_tasks.add_task(slack_events, event_data)
+    # Проверка на наличие bot_id, чтобы игнорировать события от ботов
+    if 'event' in event_data and 'bot_id' in event_data['event']:
+        logger.info("Ignoring request from a bot")
+        return {"status": "ignored"}
 
+    background_tasks.add_task(slack_events, event_data)
+    logger.info("Slack event processing started in the background")
+    
     return {"status": "processing"}
+
+
+# # Очередь для запросов от Slack
+# slack_queue = asyncio.Queue()
+# # Блокировка для синхронизации
+# slack_lock = asyncio.Lock()
+
+# @app.post('/slack/events')
+# async def slack_events_handler(request: Request, background_tasks: BackgroundTasks):
+#     event_data = await request.json()
+
+#     # Добавляем запрос в очередь
+#     await slack_queue.put(event_data)
+#     logger.info("Slack event added to the queue for processing")
+
+#     # Немедленно отправляем ответ
+#     return {"status": "queued for processing"}
+
+# # Функция для обработки запросов от Slack
+# async def process_slack_events():
+#     while True:
+#         event_data = await slack_queue.get()
+#         try:
+#             async with slack_lock:
+#                 logger.info(f"Processing Slack event: {json.dumps(event_data, ensure_ascii=False)}")
+#                 await slack_events(event_data)
+#                 logger.info("Slack event processing completed")
+#         except Exception as e:
+#             logger.error(f"Error processing Slack event: {e}")
+#         finally:
+#             slack_queue.task_done()
+#         time.sleep(5)
+
 
 # Запуск сервера FastAPI в отдельном потоке
 def run():

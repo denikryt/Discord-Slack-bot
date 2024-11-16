@@ -25,21 +25,27 @@ async def on_ready():
 async def on_message(message: Message):
     if message.author == discord_client.user:
         return json.dumps({"status":"ignored"})  
+    
+    logger(f'--------------')
+    logger(f'DISCORD INCOMING REQUEST: {message}')
 
     # Проверяем тип канала
     if isinstance(message.channel, discord.TextChannel):
-        logger(f'\n-------DISCORD - NEW MESSAGE-------\n---> {message.content}')
+        logger(f'-------DISCORD - NEW MESSAGE-------')
+        logger(f'---> {message.content}')
         result = await send_new_message_to_slack(message)
         return result
 
     elif isinstance(message.channel, discord.Thread):
         if message.type == MessageType.default:
-            logger(f'\n-------DISCORD - THREAD MESSAGE-------\n---> {message.content}')
+            logger(f'-------DISCORD - THREAD MESSAGE-------')
+            logger(f'---> {message.content}')
             result = await send_thread_message_to_slack(message)
             return result
 
         elif message.type == MessageType.reply:
-            logger(f'\n-------DISCORD - REPLY MESSAGE IN THREAD-------\n---> {message.content}')
+            logger(f'-------DISCORD - REPLY MESSAGE IN THREAD-------')
+            logger(f'---> {message.content}')
             
             # Получение ссылки на сообщение, на которое был дан ответ
             replied_message = await message.channel.fetch_message(message.reference.message_id)

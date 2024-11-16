@@ -3,7 +3,6 @@ from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from slack_sdk.signature import SignatureVerifier
 from slack_sdk.web.async_client import AsyncWebClient
-import config
 from config import SLACK_TOKEN, SIGNING_SECRET, SLACK_CHANNELS_DICT
 import db
 import asyncio
@@ -12,7 +11,6 @@ import os
 import aiohttp
 import discord
 import time
-import json
 import logging
 
 slack_client = AsyncWebClient(token=SLACK_TOKEN)
@@ -45,7 +43,8 @@ async def slack_events(event_data):
         if event.get('subtype') == 'file_share':
             if not check_file_id_existance(event):
                 # Обрабатываем первый запрос типа file_share
-                    logger(f"""\n-------NEW FILE MESSAGE FROM SLACK-------\n---> {event.get('text')}""")
+                    logger(f"""-------NEW FILE MESSAGE FROM SLACK-------""")
+                    logger(f"""---> {event.get('text')}""")
                     slack_message_operator_async(event)
                     return #jsonify({"status": "file sent"})
             else:
@@ -58,7 +57,8 @@ async def slack_events(event_data):
             return #jsonify({"status": "file_change request ignored."})
 
         elif event.get('text') != None:
-            logger(f"""\n-------NEW TEXT MESSAGE FROM SLACK-------\n---> {event.get('text')}""")
+            logger(f"""-------NEW TEXT MESSAGE FROM SLACK-------""")
+            logger(f"""---> {event.get('text')}""")
             await slack_message_operator_async(event)
             # return jsonify({"status": "ok"})
         
@@ -122,51 +122,52 @@ def logger(log_text):
     logging.info(log_text)
 
 async def send_thread_message_to_discord_async(event, discord_channel, file_paths):
-    try:
-        slack_message_id = event.get('thread_ts')
-        discord_message_id = db.get_discord_message_id(slack_message_id)    
-        user_text, user_name = get_user_data(event)
-        logger(f'Message from {user_name}')
+    slack_message_id = event.get('thread_ts')
+    discord_message_id = db.get_discord_message_id(slack_message_id)    
+    user_text, user_name = get_user_data(event)
+    logger(f'Message from {user_name}')
 
-        # discord_channel = discord_client.get_channel(int(os.environ['DISCORD_CHANNEL_ID_TEST']))
-
-        if discord_channel:
-            # Извлекаем сообщение по его ID
+    if discord_channel:
+        # Извлекаем сообщение по его ID
+        try:
             parent_message = await discord_channel.fetch_message(discord_message_id)
+        except Exception as e:
+            logger(f'Error: {e}')
+            return
+        
+        if parent_message:
+            user_text = format_mentions(event)
+            text = f'**💂_{user_name}_**\n{user_text}'
 
-            if parent_message:
-                user_text = format_mentions(event)
-                text = f'**💂_{user_name}_**\n{user_text}'
+            # Формируем часть текста из родительского сообщения для имени ветки (первые 5 слов)
+            parent_text = parent_message.content
+            thread_name = " ".join(parent_text.split()[:5])
+            thread_name = clean_and_format_thread_name(thread_name) if thread_name else "Discussion"
+            
+            # Проверяем, есть ли уже ветка для этого сообщения
+            if parent_message.thread:
+                # Если ветка уже существует, просто отправляем сообщение в существующую ветку
+                thread = parent_message.thread    
+                result = await send_thread_message_operator(file_paths, text, thread)
 
-                # Формируем часть текста из родительского сообщения для имени ветки (первые 5 слов)
-                parent_text = parent_message.content
-                thread_name = " ".join(parent_text.split()[:5])
-                thread_name = clean_and_format_thread_name(thread_name) if thread_name else "Discussion"
-                
-                # Проверяем, есть ли уже ветка для этого сообщения
-                if parent_message.thread:
-                    # Если ветка уже существует, просто отправляем сообщение в существующую ветку
-                    thread = parent_message.thread    
-                    result = await send_thread_message_operator(file_paths, text, thread)
-
-                    logger('Message sent in existing thread')
-                else:
-                    # Создаём новую ветку, если её нет
-                    thread = await parent_message.create_thread(
-                        name=f"{thread_name}",
-                    )
-                    result = await send_thread_message_operator(file_paths, text, thread)
-
-                    logger('Message sent in new thread')
-
-                if result:
-                    logger("---> 'send_thread_message_to_discord_async' func is done")
-
-                    return #jsonify({"status":"ok"})
+                logger('Message sent in existing thread')
             else:
-                logger("Message not found in Discord channel.")
-    except Exception as e:
-        logger(f"Error: {e}")
+                # Создаём новую ветку, если её нет
+                thread = await parent_message.create_thread(
+                    name=f"{thread_name}",
+                )
+                result = await send_thread_message_operator(file_paths, text, thread)
+
+                logger('Message sent in new thread')
+
+            if result:
+                logger("---> 'send_thread_message_to_discord_async' func is done")
+
+                return #jsonify({"status":"ok"})
+        else:
+            logger("Message not found in Discord channel.")
+    else:
+        logger("Discord_channel not found.")
 
 async def send_thread_message_operator(file_paths, text, thread):
     max_length = 2000
