@@ -60,7 +60,7 @@ async def on_message(message: Message):
 #------------------------------------------
 
 async def send_new_message_to_slack(message: Message):
-    from slack_bot import slack_client
+    from slack_bot import sync_slack_client
     discord_message_id = message.id
 
     try:
@@ -73,7 +73,7 @@ async def send_new_message_to_slack(message: Message):
 
         file_paths, files = await collect_files(message)
 
-        response = slack_client.files_upload_v2(
+        response = sync_slack_client.files_upload_v2(
             channel=channel_to_send,
             initial_comment=text,
             file_uploads=[{
@@ -82,18 +82,18 @@ async def send_new_message_to_slack(message: Message):
             } for file in files]
             )      
 
-        slack_message_id = wait_message_ID(slack_client, response)
+        slack_message_id = wait_message_ID(sync_slack_client, response)
         delete_files(file_paths)
     else:
         logger('MESSAGE WITHOUT FILES')
 
-        response = slack_client.chat_postMessage(
+        response = sync_slack_client.chat_postMessage(
             channel=channel_to_send,  # Укажите ID канала Slack, куда отправлять
             text=text
         ) 
         slack_message_id = response['ts']
     
-    result = slack_client.conversations_info(channel=channel_to_send)
+    result = sync_slack_client.conversations_info(channel=channel_to_send)
     channel_name = result['channel']['name']
 
     logger(f'New message sent to Slack: #{channel_name}!')
@@ -106,13 +106,13 @@ async def send_new_message_to_slack(message: Message):
         logger('---> slack_message_id is empty')
         return json.dumps({"status":"false"})
 
-def wait_message_ID(slack_client, response):
+def wait_message_ID(sync_slack_client, response):
 # Polling the files.info API to get the 'shares' property with ts and thread_ts
     file_id = response['files'][0]['id']
 
     while True:
         try:
-            file_info = slack_client.files_info(file=file_id)
+            file_info = sync_slack_client.files_info(file=file_id)
             # print('----- file_info -----\n', file_info)
             shares = file_info['file'].get('shares')
             
@@ -145,7 +145,7 @@ def wait_message_ID(slack_client, response):
             exit()
 
 async def send_thread_message_to_slack(message: Message):
-    from slack_bot import slack_client
+    from slack_bot import sync_slack_client
 
   # Получаем ID родительского сообщения
     discord_parent_message = await message.channel.parent.fetch_message(message.channel.id)
@@ -166,7 +166,7 @@ async def send_thread_message_to_slack(message: Message):
             file_paths, files = await collect_files(message)
 
             # Upload all files at once using files_upload_v2
-            response = slack_client.files_upload_v2(
+            response = sync_slack_client.files_upload_v2(
                 channels=channel_to_send,
                 initial_comment=text,
                 file_uploads=[{
@@ -181,14 +181,14 @@ async def send_thread_message_to_slack(message: Message):
         else:
             logger('MESSAGE WITHOUT IMAGE')
 
-            response = slack_client.chat_postMessage(
+            response = sync_slack_client.chat_postMessage(
                 channel=channel_to_send,  # Укажите ID канала Slack, куда отправлять
                 text=text,
                 thread_ts=slack_parent_message_id
             ) 
 
         if response.get('ok'): 
-            result = slack_client.conversations_info(channel=channel_to_send)
+            result = sync_slack_client.conversations_info(channel=channel_to_send)
             channel_name = result['channel']['name']
 
             logger(f'Thread message sent to Slack: #{channel_name}')

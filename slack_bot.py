@@ -1,7 +1,8 @@
-from flask import Flask, jsonify, request
+from flask import Flask, request
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from slack_sdk.signature import SignatureVerifier
+from slack_sdk.web.async_client import AsyncWebClient
 import config
 from config import SLACK_TOKEN, SIGNING_SECRET, SLACK_CHANNELS_DICT
 import db
@@ -14,15 +15,16 @@ import time
 import json
 import logging
 
-slack_client = WebClient(token=SLACK_TOKEN)
+slack_client = AsyncWebClient(token=SLACK_TOKEN)
+sync_slack_client = WebClient(token=SLACK_TOKEN)
 signature_verifier = SignatureVerifier(signing_secret=SIGNING_SECRET)
-BOT_ID = slack_client.api_call("auth.test")['user_id']
+BOT_ID = sync_slack_client.api_call("auth.test")['user_id']
 
 processed_files = set()
 file_timestamps = {}  # Словарь для хранения времени добавления файлов
 EXPIRATION_TIME = 300  # Время жизни записи в секундах (например, 5 минут)
 
-def slack_events(event_data):
+async def slack_events(event_data):
     global processed_files
     # print('\n------ REQUEST ------\n', json.dumps(request.json, indent=4))
 
@@ -33,7 +35,7 @@ def slack_events(event_data):
 
     if "type" in event_data and event_data["type"] == "url_verification":
         logging.error("Challenge verification accepted")
-        return jsonify({"challenge": event_data["challenge"]})
+        return {"challenge": event_data["challenge"]}
 
     event = event_data.get("event", {})
     user_id = event.get('user')
@@ -44,27 +46,27 @@ def slack_events(event_data):
             if not check_file_id_existance(event):
                 # Обрабатываем первый запрос типа file_share
                     logger(f"""\n-------NEW FILE MESSAGE FROM SLACK-------\n---> {event.get('text')}""")
-                    slack_message_operator(event)
-                    return jsonify({"status": "file sent"})
+                    slack_message_operator_async(event)
+                    return #jsonify({"status": "file sent"})
             else:
                 logger('file_share request ignored')
-                return jsonify({"status": "file_share request ignored"})
+                return #jsonify({"status": "file_share request ignored"})
 
         # Игнорируем все запросы типа file_change
         elif event_data['event'].get('subtype') == 'file_change':
             logger("file_change request ignored.")
-            return jsonify({"status": "file_change request ignored."})
+            return #jsonify({"status": "file_change request ignored."})
 
         elif event.get('text') != None:
             logger(f"""\n-------NEW TEXT MESSAGE FROM SLACK-------\n---> {event.get('text')}""")
-            slack_message_operator(event)
-            return jsonify({"status": "ok"})
+            await slack_message_operator_async(event)
+            # return jsonify({"status": "ok"})
         
         else:
-            return jsonify({"status": "no text found"})
+            return #jsonify({"status": "no text found"})
     else:
         logger('Request from this bot!')
-        return jsonify({"status": "bot text"})
+        return #jsonify({"status": "bot text"})
 
 #------------------------------------------
 # Helper functions to send message to Discord
@@ -75,7 +77,9 @@ async def slack_message_operator_async(event):
     from discord_bot import discord_client
 
     channel_id = event.get('channel')
+    logger(f'channel_id: {channel_id}')
     channel_name = get_channel_name(channel_id)
+    logger(f'channel_name: {channel_name}')
 
     if channel_id in SLACK_CHANNELS_DICT:
         logger(f'SLACK - MESSAGE FROM - #{channel_name}')
@@ -83,7 +87,7 @@ async def slack_message_operator_async(event):
         discord_channel = discord_client.get_channel(int(discord_channel_id))
     else:
         logger(f'SLACK - MESSAGE FROM OTHER CHANNEL - #{channel_name}')
-        return jsonify({"status": "channel not handled"})
+        return #jsonify({"status": "channel not handled"})
         
     if 'files' in event:  # Check if the message contains files
         logger('MESSAGE WITH IMAGE')
@@ -111,7 +115,7 @@ async def slack_message_operator_async(event):
         
     else:
         logger('UNKNOWN MESSAGE FROM SLACK')
-        return jsonify({"status": "unknown message type"})
+        return #jsonify({"status": "unknown message type"})
 
 def logger(log_text):
     print(log_text)
@@ -158,7 +162,7 @@ async def send_thread_message_to_discord_async(event, discord_channel, file_path
                 if result:
                     logger("---> 'send_thread_message_to_discord_async' func is done")
 
-                    return jsonify({"status":"ok"})
+                    return #jsonify({"status":"ok"})
             else:
                 logger("Message not found in Discord channel.")
     except Exception as e:
@@ -212,7 +216,7 @@ async def send_thread_message_with_files(file_paths, thread, text):
 def get_user_data(event):
     user_id = event.get('user')
     user_text = format_mentions(event)
-    user_info = slack_client.users_info(user=user_id)['user']
+    user_info = sync_slack_client.users_info(user=user_id)['user']
     user_name = user_info['profile']['display_name'] or user_info['real_name']
     return user_text, user_name
 
@@ -231,7 +235,7 @@ async def send_new_message_to_discord_async(event, discord_channel, slack_messag
             db.save_message_to_db(slack_message_id, message_id)
 
             logger("---> 'send_new_message_to_discord_async' func is done")
-            return jsonify({"status":"ok"})
+            return #jsonify({"status":"ok"})
         
     except Exception as e:
         logger(f"Error: {e}")
@@ -371,7 +375,7 @@ def format_mentions(event):
     if mentions:  
         for mention in mentions:
             try:
-                mention_info = slack_client.users_info(user=mention)
+                mention_info = sync_slack_client.users_info(user=mention)
                 mention_name = mention_info['user']['real_name']
                 user_text = user_text.replace(f'<@{mention}>', f'@{mention_name}')
             except Exception as e:
@@ -407,7 +411,7 @@ def split_text_by_parts(text, max_length):
 def get_channel_name(channel_id):
     try:
         # Запрос к Slack API для получения информации о канале
-        response = slack_client.conversations_info(channel=channel_id)
+        response = sync_slack_client.conversations_info(channel=channel_id)
         channel_name = response["channel"]["name"]
         return channel_name
     except SlackApiError as e:
