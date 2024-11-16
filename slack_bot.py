@@ -75,7 +75,7 @@ async def slack_events(event_data):
                     # Обрабатываем первый запрос типа file_share
                         logger(f"""-------NEW FILE MESSAGE FROM SLACK-------""")
                         logger(f"""---> {event.get('text')}""")
-                        slack_message_operator_async(event)
+                        await slack_message_operator_async(event)
                         return #jsonify({"status": "file sent"})
                 else:
                     logger('file_share request ignored')
