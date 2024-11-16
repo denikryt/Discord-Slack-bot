@@ -67,6 +67,7 @@ async def slack_events_handler(request: Request, background_tasks: BackgroundTas
     background_tasks.add_task(slack_events, event_data)
     logger.info("Slack event processing started in the background")
     
+    print('RETURN')
     return {"status": "processing"}
 
 

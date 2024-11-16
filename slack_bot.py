@@ -12,15 +12,44 @@ import aiohttp
 import discord
 import time
 import logging
+from datetime import datetime, timedelta
 
 slack_client = AsyncWebClient(token=SLACK_TOKEN)
 sync_slack_client = WebClient(token=SLACK_TOKEN)
 signature_verifier = SignatureVerifier(signing_secret=SIGNING_SECRET)
 BOT_ID = sync_slack_client.api_call("auth.test")['user_id']
 
+processed_requests = {}
 processed_files = set()
 file_timestamps = {}  # Словарь для хранения времени добавления файлов
 EXPIRATION_TIME = 300  # Время жизни записи в секундах (например, 5 минут)
+
+# Асинхронная функция для очистки старых записей
+def cleanup_expired_requests():
+    global processed_requests
+
+    logger(f"processed_requests before cleanup: \n{processed_requests}")
+    now = datetime.now()
+    expired_keys = [key for key, timestamp in processed_requests.items() if now >= timestamp + timedelta(minutes=5)]
+    for key in expired_keys:
+        del processed_requests[key]
+    logger(f"processed_requests after cleanup: \n{processed_requests}")
+
+# Функция проверки существования и добавления новых запросов
+def check_request_existence(request_id):
+    global processed_requests
+
+    cleanup_expired_requests()
+    now = datetime.now()
+    if request_id in processed_requests:
+        logger('Request saved already!')
+        return True  # Запрос уже существует
+    else:
+        processed_requests[request_id] = now  # Сохранение нового запроса
+        logger('New request!')
+        logger(f'processed_requests: \n{processed_requests}')
+
+        return False  # Запрос новый
 
 async def slack_events(event_data):
     global processed_files
@@ -37,33 +66,38 @@ async def slack_events(event_data):
 
     event = event_data.get("event", {})
     user_id = event.get('user')
+    event_id = event.get('client_msg_id')
 
     if user_id != BOT_ID:
-        # Проверяем, если это запрос типа file_share
-        if event.get('subtype') == 'file_share':
-            if not check_file_id_existance(event):
-                # Обрабатываем первый запрос типа file_share
-                    logger(f"""-------NEW FILE MESSAGE FROM SLACK-------""")
-                    logger(f"""---> {event.get('text')}""")
-                    slack_message_operator_async(event)
-                    return #jsonify({"status": "file sent"})
+        if event_id and not check_request_existence(event_id):
+            # Проверяем, если это запрос типа file_share
+            if event.get('subtype') == 'file_share':
+                if not check_file_id_existance(event):
+                    # Обрабатываем первый запрос типа file_share
+                        logger(f"""-------NEW FILE MESSAGE FROM SLACK-------""")
+                        logger(f"""---> {event.get('text')}""")
+                        slack_message_operator_async(event)
+                        return #jsonify({"status": "file sent"})
+                else:
+                    logger('file_share request ignored')
+                    return #jsonify({"status": "file_share request ignored"})
+
+            # Игнорируем все запросы типа file_change
+            elif event_data['event'].get('subtype') == 'file_change':
+                logger("file_change request ignored.")
+                return #jsonify({"status": "file_change request ignored."})
+
+            elif event.get('text') != None:
+                logger(f"""-------NEW TEXT MESSAGE FROM SLACK-------""")
+                logger(f"""---> {event.get('text')}""")
+                await slack_message_operator_async(event)
+                # return jsonify({"status": "ok"})
+            
             else:
-                logger('file_share request ignored')
-                return #jsonify({"status": "file_share request ignored"})
-
-        # Игнорируем все запросы типа file_change
-        elif event_data['event'].get('subtype') == 'file_change':
-            logger("file_change request ignored.")
-            return #jsonify({"status": "file_change request ignored."})
-
-        elif event.get('text') != None:
-            logger(f"""-------NEW TEXT MESSAGE FROM SLACK-------""")
-            logger(f"""---> {event.get('text')}""")
-            await slack_message_operator_async(event)
-            # return jsonify({"status": "ok"})
-        
+                return #jsonify({"status": "no text found"})
         else:
-            return #jsonify({"status": "no text found"})
+            logger('Ti!')
+
     else:
         logger('Request from this bot!')
         return #jsonify({"status": "bot text"})
