@@ -211,11 +211,10 @@ def format_mentions(message):
     if mentions:
         logger('Mentions were found!')
         for mention in mentions:
-            user_id = f'@{mention.id}'
             user_message = user_message.replace(f'<@{mention.id}>', f'@{mention.display_name}')
-            return user_message
+        return user_message
     else:
-        logger('Mentions was not found!')
+        logger('Mentions were not found!')
         return user_message
 
 def choose_channel(message):
@@ -296,7 +295,7 @@ async def download_image_from_discord(image_url):
         logger(f"Error downloading image from {image_url}: {e}")
     return None
 
-def delete_files(file_paths):
+def delete_files(file_paths): 
 
     """Delete files after they have been used."""
     for file_path in file_paths:
