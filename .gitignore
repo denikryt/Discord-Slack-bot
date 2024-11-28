@@ -4,5 +4,6 @@
 /temp_files
 app.log
 /test-files
-tokens.txt
 http_requests.log
+/logs
+tokens.txt

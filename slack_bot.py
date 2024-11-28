@@ -18,22 +18,21 @@ slack_client = AsyncWebClient(token=SLACK_TOKEN)
 sync_slack_client = WebClient(token=SLACK_TOKEN)
 signature_verifier = SignatureVerifier(signing_secret=SIGNING_SECRET)
 BOT_ID = sync_slack_client.api_call("auth.test")['user_id']
+print('BOT_ID', BOT_ID)
 
 processed_requests = {}
 processed_files = set()
-file_timestamps = {}  # Словарь для хранения времени добавления файлов
-EXPIRATION_TIME = 300  # Время жизни записи в секундах (например, 5 минут)
+file_timestamps = {}  
+EXPIRATION_TIME = 300  
 
 # Асинхронная функция для очистки старых записей
 def cleanup_expired_requests():
     global processed_requests
 
-    # logger(f"processed_requests before cleanup: \n{processed_requests}")
     now = datetime.now()
     expired_keys = [key for key, timestamp in processed_requests.items() if now >= timestamp + timedelta(minutes=5)]
     for key in expired_keys:
         del processed_requests[key]
-    # logger(f"processed_requests after cleanup: \n{processed_requests}")
 
 # Функция проверки существования и добавления новых запросов
 def check_request_existence(request_id):
@@ -42,65 +41,58 @@ def check_request_existence(request_id):
     cleanup_expired_requests()
     now = datetime.now()
     if request_id in processed_requests:
-        return True  # Запрос уже существует
+        return True  
     else:
-        processed_requests[request_id] = now  # Сохранение нового запроса
-        # logger(f'processed_requests: \n{processed_requests}')
-
-        return False  # Запрос новый
+        processed_requests[request_id] = now  
+        return False  
 
 async def slack_events(event_data):
     global processed_files
-    # print('\n------ REQUEST ------\n', json.dumps(request.json, indent=4))
-
-    # Validate the request signature
-    # if not signature_verifier.is_valid_request(request.get_data(), request.headers):
-    #     logging.error("Invalid request signature")
-    #     return jsonify({"error": "invalid request"}), 403
-
-    if "type" in event_data and event_data["type"] == "url_verification":
-        logging.error("Challenge verification accepted")
-        return {"challenge": event_data["challenge"]}
 
     event = event_data.get("event", {})
-    user_id = event.get('user')
-    event_id = event.get('client_msg_id')
+    event_id = event.get('client_msg_id') or event_data.get("event_id")
+    logger(f'EVENT_ID: {event_id}')
 
-    if user_id != BOT_ID:
-        if event_id and not check_request_existence(event_id):
-            logger('New request!')
-            # Проверяем, если это запрос типа file_share
-            if event.get('subtype') == 'file_share':
-                if not check_file_id_existance(event):
-                    # Обрабатываем первый запрос типа file_share
-                        logger(f"""-------NEW FILE MESSAGE FROM SLACK-------""")
-                        logger(f"""---> {event.get('text')}""")
-                        await slack_message_operator_async(event)
-                        return #jsonify({"status": "file sent"})
-                else:
-                    logger('file_share request ignored')
-                    return #jsonify({"status": "file_share request ignored"})
-
-            # Игнорируем все запросы типа file_change
-            elif event_data['event'].get('subtype') == 'file_change':
-                logger("file_change request ignored.")
-                return #jsonify({"status": "file_change request ignored."})
-
-            elif event.get('text') != None:
-                logger(f"""-------NEW TEXT MESSAGE FROM SLACK-------""")
-                logger(f"""---> {event.get('text')}""")
-                await slack_message_operator_async(event)
-                # return jsonify({"status": "ok"})
-            
+    if event_id and not check_request_existence(event_id):
+        logger('New request!')
+        # Проверяем, если это запрос типа file_share
+        if event.get('subtype') == 'file_share':
+            if not check_file_id_existance(event):
+                # Обрабатываем первый запрос типа file_share
+                    logger(f"""-------NEW FILE MESSAGE FROM SLACK-------""")
+                    logger(f"""---> {event.get('text')}""")
+                    await slack_message_operator_async(event)
+                    return 
             else:
-                return #jsonify({"status": "no text found"})
+                logger('file_share request ignored')
+                return 
+
+        # Игнорируем все запросы типа file_change
+        elif event_data['event'].get('subtype') == 'file_change':
+            logger("file_change request ignored.")
+            return 
+
+        elif event.get('text') != "" and event.get('text') is not None:
+            logger(f"""-------NEW TEXT MESSAGE FROM SLACK-------""")
+            logger(f"""---> {event.get('text')}""")
+            await slack_message_operator_async(event)
+            return
+        
+        elif 'attachments' in event and event.get('attachments'):
+            attachments = event['attachments']
+            for attachment in attachments:
+                text = attachment.get('text', "").strip()
+                if text:
+                    logger(f"""-------NEW TEXT MESSAGE FROM SLACK (from attachments)-------""")
+                    logger(f"""---> {text}""")
+                    await slack_message_operator_async(event)  
+                    return      
         else:
-            logger('Request saved already!')
-
-
+            logger('UNKNOWN MESSAGE CONTENT')
+            return 
     else:
-        logger('Request from this bot!')
-        return #jsonify({"status": "bot text"})
+        logger(f'Request saved already: {event_id}')
+
 
 #------------------------------------------
 # Helper functions to send message to Discord
@@ -134,22 +126,37 @@ async def slack_message_operator_async(event):
         logger(f'SLACK - MESSAGE IN THREAD')
 
         try:
-            # Пытаемся получить Discord message ID по Slack message ID
-            result = db.get_discord_message_id(event.get('thread_ts'))
-            logger("Discord message ID was found for this Slack message.")
-            send_thread_message_to_discord(event, discord_channel=discord_channel, discord_client=discord_client, file_paths=file_paths)
+            wait_for_parent_message_id(event)
+            send_thread_message_to_discord(event, discord_channel=discord_channel, file_paths=file_paths)
         except KeyError:
-            # Если Slack message ID не найден, выводим сообщение об ошибке
-            logger("Error: Discord message ID not found for this Slack message.")
-            send_new_message_to_discord(event, discord_channel=discord_channel, slack_message_id=event.get('thread_ts'), discord_client=discord_client, file_paths=file_paths)
+            send_new_message_to_discord(event, discord_channel=discord_channel, slack_message_id=event.get('thread_ts'), file_paths=file_paths)
 
     elif event.get('ts'):
         logger(f'SLACK - NEW MESSAGE IN CHANNEL')
-        send_new_message_to_discord(event, discord_channel=discord_channel, slack_message_id=event.get('ts'), discord_client=discord_client, file_paths=file_paths)
+        send_new_message_to_discord(event, discord_channel=discord_channel, slack_message_id=event.get('ts'), file_paths=file_paths)
         
     else:
         logger('UNKNOWN MESSAGE FROM SLACK')
-        return #jsonify({"status": "unknown message type"})
+        return 
+
+
+def wait_for_parent_message_id(event):
+    slack_message_id = event.get('thread_ts')
+    logger(f'slack_message_id: {slack_message_id}')
+
+    retries = 60
+    while retries:
+        try:
+            discord_message_id = db.get_discord_message_id(slack_message_id)
+            return discord_message_id
+        except Exception as e:
+            logger(f'.*wait_for_parent_message_id* Error: {e}')
+            retries -= 1
+            if retries == 0:
+                raise e
+            logger("Waiting for parent message")
+            time.sleep(1)  # Wait before retrying to allow time for database updates
+
 
 def logger(log_text):
     print(log_text)
@@ -159,45 +166,52 @@ async def send_thread_message_to_discord_async(event, discord_channel, file_path
     slack_message_id = event.get('thread_ts')
     discord_message_id = db.get_discord_message_id(slack_message_id)    
     user_text, user_name = get_user_data(event)
-    logger(f'Message from {user_name}')
-
+    logger(f'Message from: {user_name}')
+    
     if discord_channel:
-        # Извлекаем сообщение по его ID
         try:
             parent_message = await discord_channel.fetch_message(discord_message_id)
         except Exception as e:
-            logger(f'Error: {e}')
-            return
-        
+            logger(f'Error parent message: {e}')
+            return        
+
         if parent_message:
-            user_text = format_mentions(event)
             text = f'**💂_{user_name}_**\n{user_text}'
 
-            # Формируем часть текста из родительского сообщения для имени ветки (первые 5 слов)
-            parent_text = parent_message.content
-            thread_name = " ".join(parent_text.split()[:5])
-            thread_name = clean_and_format_thread_name(thread_name) if thread_name else "Discussion"
-            
+            try:
+                # Формируем часть текста из родительского сообщения для имени ветки (первые 5 слов)
+                parent_text = parent_message.content
+                thread_name = " ".join(parent_text.split()[:5])
+                thread_name = clean_and_format_thread_name(thread_name) if thread_name else "Discussion"
+            except Exception as e:
+                logger(f'2: {e}')
+
             # Проверяем, есть ли уже ветка для этого сообщения
             if parent_message.thread:
-                # Если ветка уже существует, просто отправляем сообщение в существующую ветку
-                thread = parent_message.thread    
-                result = await send_thread_message_operator(file_paths, text, thread)
+                try:
+                    # Если ветка уже существует, просто отправляем сообщение в существующую ветку
+                    thread = parent_message.thread    
+                    result = await send_thread_message_operator(file_paths, text, thread)
 
-                logger('Message sent in existing thread')
+                    logger('Message sent in existing thread')
+                except Exception as e:
+                    logger(f'3: {e}')
+
             else:
-                # Создаём новую ветку, если её нет
-                thread = await parent_message.create_thread(
-                    name=f"{thread_name}",
-                )
-                result = await send_thread_message_operator(file_paths, text, thread)
+                try:
+                    # Создаём новую ветку, если её нет
+                    thread = await parent_message.create_thread(
+                        name=f"{thread_name}",
+                    )
+                    result = await send_thread_message_operator(file_paths, text, thread)
 
-                logger('Message sent in new thread')
-
+                    logger('Message sent in new thread')
+                except Exception as e:
+                    logger(f'4: {e}')
             if result:
                 logger("---> 'send_thread_message_to_discord_async' func is done")
 
-                return #jsonify({"status":"ok"})
+                return
         else:
             logger("Message not found in Discord channel.")
     else:
@@ -247,13 +261,6 @@ async def send_thread_message_with_files(file_paths, thread, text):
     result = await thread.send(text, files=files)
     delete_files(file_paths)
     return result
-
-def get_user_data(event):
-    user_id = event.get('user')
-    user_text = format_mentions(event)
-    user_info = sync_slack_client.users_info(user=user_id)['user']
-    user_name = user_info['profile']['display_name'] or user_info['real_name']
-    return user_text, user_name
 
 async def send_new_message_to_discord_async(event, discord_channel, slack_message_id, file_paths):
     try:
@@ -375,11 +382,13 @@ def slack_message_operator(event):
     asyncio.set_event_loop(loop)     # Set it as the current event loop
     loop.run_until_complete(slack_message_operator_async(event))  # Run the async function
        
-def send_thread_message_to_discord(event, discord_channel, discord_client, file_paths):
+def send_thread_message_to_discord(event, discord_channel, file_paths):
+    from discord_bot import discord_client
     # Правильный запуск асинхронной функции с использованием event loop
     asyncio.ensure_future(send_thread_message_to_discord_async(event, discord_channel, file_paths), loop=discord_client.loop)
 
-def send_new_message_to_discord(event, discord_channel, slack_message_id, discord_client, file_paths):
+def send_new_message_to_discord(event, discord_channel, slack_message_id, file_paths):
+    from discord_bot import discord_client
     # Правильно запускаем асинхронную функцию с использованием event loop
     asyncio.ensure_future(send_new_message_to_discord_async(event, discord_channel, slack_message_id, file_paths), loop=discord_client.loop)
 
@@ -403,8 +412,7 @@ def delete_files(file_paths):
         except Exception as e:
             logger(f"Error deleting image {file_path}: {e}")
 
-def format_mentions(event):
-    user_text = event.get('text')
+def format_mentions(user_text):
     mentions = re.findall(r'<@(\w+)>', user_text)
 
     if mentions:  
@@ -493,3 +501,26 @@ def add_file_to_processed(file_id):
 
     processed_files.add(file_id)
     file_timestamps[file_id] = time.time()
+
+def get_text(event):
+    try:
+        if event.get('text') == "" and 'attachments' in event and event.get('attachments'):
+            attachments = event['attachments']
+            for attachment in attachments:
+                text = attachment.get('text', "").strip()
+                if text:
+                    user_text = text if text else ''
+        else:
+            user_text = event.get('text')
+
+        return user_text
+    except Exception as e:
+        logger(f'Error in get_text: {e}')
+
+def get_user_data(event):
+    user_id = event.get('user')
+    user_text = get_text(event)
+    user_text = format_mentions(user_text)
+    user_info = sync_slack_client.users_info(user=user_id)['user']
+    user_name = user_info['profile']['display_name'] or user_info['real_name']
+    return user_text, user_name

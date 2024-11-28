@@ -1,44 +1,64 @@
-from fastapi import FastAPI, Request, BackgroundTasks
+from fastapi import FastAPI, Request, BackgroundTasks, Header, HTTPException
 from slack_bot import slack_events
 from discord_bot import discord_client
 import logging
 import os
 from threading import Thread
 import json
+from starlette.responses import JSONResponse
+from logging.handlers import RotatingFileHandler
+from slack_sdk.signature import SignatureVerifier
+from config import SIGNING_SECRET
 
-# Очистка содержимого файла app.log при запуске программы
-with open('app.log', 'w', encoding='utf-8'):
+# Создаём папку logs, если она не существует
+os.makedirs("logs", exist_ok=True)
+
+# Удаляем текущий файл app.log при запуске программы
+log_file_path = os.path.join("logs", "app.log")
+with open(log_file_path, 'w', encoding='utf-8'):
     pass  # Открываем файл в режиме записи, чтобы очистить его
 
-logging.basicConfig(
-    filename='app.log',
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    encoding='utf-8',
+# Настраиваем ротацию логов
+rotating_handler = RotatingFileHandler(
+    log_file_path,
+    maxBytes=10 * 1024 * 1024, 
+    backupCount=5,  # Количество резервных копий логов
+    encoding='utf-8'
 )
-logger = logging.getLogger(__name__)
+
+# Настраиваем формат логов
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+rotating_handler.setFormatter(formatter)
+
+# Настраиваем корневой логгер
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+logger.addHandler(rotating_handler)
 
 app = FastAPI()
-
+signature_verifier = SignatureVerifier(signing_secret=SIGNING_SECRET)
 
 def format_json(data):
     try:
         parsed = json.loads(data)
         return json.dumps(parsed, indent=4, ensure_ascii=False)
     except (json.JSONDecodeError, TypeError):
-        return data  # Если не JSON, вернуть как есть
+        return data  
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
+    from slack_bot import BOT_ID
+
     body = await request.body()
     try:
         event_data = json.loads(body)
         # Проверка на наличие bot_id, чтобы не логировать запросы от бота
-        if event_data.get('event', {}).get('bot_id'):
+        if event_data.get('event', {}).get('bot_id') == BOT_ID:
             response = await call_next(request)
             return response
-    except (json.JSONDecodeError, TypeError):
-        pass  # Если тело не является JSON, продолжаем обработку как есть
+    except (json.JSONDecodeError, TypeError
+            ):
+        pass  
 
     formatted_body = format_json(body) if body else "No body"
     logger.info(f"Incoming request: {request.method} {request.url} - Body: {formatted_body}")
@@ -49,58 +69,48 @@ async def log_requests(request: Request, call_next):
     
     return response
 
-
 @app.get('/')
 async def home():
     logger.info("Home endpoint accessed")
     return 'Both bots are running'
 
 @app.post('/slack/events')
-async def slack_events_handler(request: Request, background_tasks: BackgroundTasks):
+async def slack_events_handler(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    x_slack_signature: str = Header(None),
+    x_slack_request_timestamp: str = Header(None),
+):
+    from slack_bot import BOT_ID
+
+    # Проверка подписи Slack для безопасности
+    body = await request.body()
+    if not signature_verifier.is_valid_request(body.decode('utf-8'), {'X-Slack-Signature': x_slack_signature, 'X-Slack-Request-Timestamp': x_slack_request_timestamp}):
+        logger.error("Invalid Slack signature")
+        raise HTTPException(status_code=400, detail="Invalid request signature")
+
+    # logger.info(f'BOT_ID: {BOT_ID}')
     event_data = await request.json()
+    # logger.info(f'SLACK REQUEST:\n{event_data}')
+
+    # Проверка типа запроса на url_verification
+    if event_data.get('type') == 'url_verification':
+        logger.info("URL verification request received")
+        return {"challenge": event_data.get('challenge')}
 
     # Проверка на наличие bot_id, чтобы игнорировать события от ботов
-    if 'event' in event_data and 'bot_id' in event_data['event']:
-        logger.info("Ignoring request from a bot")
-        return {"status": "ignored"}
-
-    background_tasks.add_task(slack_events, event_data)
-    logger.info("Slack event processing started in the background")
-    
-    print('RETURN')
-    return {"status": "processing"}
-
-
-# # Очередь для запросов от Slack
-# slack_queue = asyncio.Queue()
-# # Блокировка для синхронизации
-# slack_lock = asyncio.Lock()
-
-# @app.post('/slack/events')
-# async def slack_events_handler(request: Request, background_tasks: BackgroundTasks):
-#     event_data = await request.json()
-
-#     # Добавляем запрос в очередь
-#     await slack_queue.put(event_data)
-#     logger.info("Slack event added to the queue for processing")
-
-#     # Немедленно отправляем ответ
-#     return {"status": "queued for processing"}
-
-# # Функция для обработки запросов от Slack
-# async def process_slack_events():
-#     while True:
-#         event_data = await slack_queue.get()
-#         try:
-#             async with slack_lock:
-#                 logger.info(f"Processing Slack event: {json.dumps(event_data, ensure_ascii=False)}")
-#                 await slack_events(event_data)
-#                 logger.info("Slack event processing completed")
-#         except Exception as e:
-#             logger.error(f"Error processing Slack event: {e}")
-#         finally:
-#             slack_queue.task_done()
-#         time.sleep(5)
+    if 'event' in event_data: 
+        if 'bot_id' in event_data['event'] and event_data['event'].get('user') == BOT_ID:
+            logger.info("***Ignoring request from this bot")
+            return JSONResponse(content={"status": "ignored"}, status_code=200)
+        else:
+            background_tasks.add_task(slack_events, event_data)
+            logger.info("***Slack event processing started in the background")
+            return JSONResponse(content={"status": "ok"}, status_code=200)
+            
+    else:
+        logger.info("***Unexpected request structure")
+        return JSONResponse(content={"status": "ignored"}, status_code=200)
 
 
 # Запуск сервера FastAPI в отдельном потоке
