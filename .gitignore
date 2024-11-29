@@ -7,3 +7,4 @@ app.log
 http_requests.log
 /logs
 tokens.txt
+.env
