@@ -15,6 +15,7 @@ from config import DISCORD_CHANNELS_DICT
 
 intents = Intents.default()
 intents.message_content = True 
+intents.members = True
 discord_client = Client(intents=intents)
 
 @discord_client.event
@@ -22,12 +23,30 @@ async def on_ready():
     logger(f'{discord_client.user} is now running!')
 
 @discord_client.event
+async def on_member_join(member):
+    logger('New member!')
+
+    user_name = member.name
+    user_id = member.id
+    send_greet_message(user_id, user_name)
+
+@discord_client.event
 async def on_message(message: Message):
     if message.author == discord_client.user:
         return json.dumps({"status":"ignored"})  
     
+    # user_name = message.author.name
+    # user_id = message.author.id  
+    # send_greet_message(user_id, user_name)
+    # return
+
+    # Игнорировать сообщения типа new_member
+    if message.type == discord.MessageType.new_member:
+        return  # Игнорируем это сообщение, оно будет обработано в on_member_join
+    
+
     logger(f'--------------')
-    logger(f'DISCORD INCOMING REQUEST: {message}')
+    logger(f'DISCORD INCOMING REQUEST: {message}') 
 
     # Проверяем тип канала
     if isinstance(message.channel, discord.TextChannel):
@@ -64,6 +83,40 @@ async def on_message(message: Message):
 #------------------------------------------
 # Helper functions to send message to Slack
 #------------------------------------------
+
+def send_greet_message(user_id, user_name):
+    from slack_bot import sync_slack_client
+
+    slack_message = {
+    "channel": config.SLACK_CHANNEL_NEWBIES,
+    "text": f"*_{user_name}_* доєднався на сервер!",
+    "blocks": [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*_{user_name}_* доєднався на сервер!"
+            }
+        },
+        {
+            "type": "actions",
+            "block_id": "greet_button_block",
+            "elements": [
+                {
+                    "type": "button",
+                    "action_id": "greet_button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "Привітайся!"
+                    },
+                    "value": f"{user_name},{user_id}"  # Сохраняем имя и ID
+                }
+            ]
+        }
+    ]
+}
+    response = sync_slack_client.chat_postMessage(**slack_message)
+    return response
 
 async def send_new_message_to_slack(message: Message):
     from slack_bot import sync_slack_client
@@ -295,7 +348,7 @@ async def download_image_from_discord(image_url):
         logger(f"Error downloading image from {image_url}: {e}")
     return None
 
-def delete_files(file_paths): 
+def delete_files(file_paths):
 
     """Delete files after they have been used."""
     for file_path in file_paths:

@@ -10,6 +10,7 @@ load_dotenv(dotenv_path=env_path)
 SLACK_TOKEN = os.environ.get('SLACK_TOKEN')
 SIGNING_SECRET = os.environ.get('SIGNING_SECRET')
 TOKEN_DISCORD = os.environ.get('TOKEN_DISCORD')
+DISCORD_NEWBIES_WEBHOOK_URL = os.environ.get('DISCORD_NEWBIES_WEBHOOK_URL')
 
 MONGO_DB = os.environ.get('MONGO_DB')
 

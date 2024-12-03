@@ -1,9 +1,9 @@
-from flask import Flask, request
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from slack_sdk.signature import SignatureVerifier
 from slack_sdk.web.async_client import AsyncWebClient
 from config import SLACK_TOKEN, SIGNING_SECRET, SLACK_CHANNELS_DICT
+import config
 import db
 import asyncio
 import re
@@ -12,6 +12,8 @@ import aiohttp
 import discord
 import time
 import logging
+import json
+import requests
 from datetime import datetime, timedelta
 
 slack_client = AsyncWebClient(token=SLACK_TOKEN)
@@ -34,7 +36,7 @@ def cleanup_expired_requests():
     for key in expired_keys:
         del processed_requests[key]
 
-# Функция проверки существования и добавления новых запросов
+# Функция проверки существования и добавления новых запросов 
 def check_request_existence(request_id):
     global processed_requests
 
@@ -94,10 +96,74 @@ async def slack_events(event_data):
         logger(f'Request saved already: {event_id}')
 
 
+async def handle_button_click(payload):
+    logger('handle_button_click!')
+
+    interaction = payload  
+    action = payload["actions"][0]
+
+    if action["action_id"] == "greet_button":
+        user_id = interaction["user"]["id"]
+        value = action.get("value")
+        discord_user_name, discord_user_id = value.split(',')
+
+        emoji = ":wave:"  # Здесь можно заменить на желаемый эмодзи
+
+        try:
+            # Запрос информации о пользователе Slack
+            user_info = sync_slack_client.users_info(user=user_id)
+            user_data = user_info.get("user", {})
+            user_name = user_data.get("real_name", "Anonymous")
+            avatar_url = user_data.get("profile", {}).get("image_192", "")
+
+        except SlackApiError as e:
+            return f"Ошибка Slack API: {e.response['error']}", 500
+        
+        try:
+            # Формирование сообщения для вебхука Discord
+            discord_message = (
+                f"<@{discord_user_id}>\n"
+                f"{emoji}"
+            )
+            data = {
+                "content": discord_message,
+                "username": user_name,  # Имя пользователя из Slack
+                "avatar_url": avatar_url if avatar_url else "",  # Аватар из Slack
+            }
+            headers = {"Content-Type": "application/json"}
+
+            # Отправка сообщения через вебхук Discord
+            response = requests.post(config.DISCORD_NEWBIES_WEBHOOK_URL, data=json.dumps(data), headers=headers)
+            
+            if response.status_code != 204:
+                return f"Ошибка отправки в Discord: {response.text}", response.status_code
+            else:
+                logger(f'{user_name} waved to {discord_user_name}!')
+            
+        except Exception as e:
+            return f"Ошибка при отправке сообщения в Discord: {e}", 500
+        
+        # Отправляем ephemeral сообщение
+        try:
+            sync_slack_client.chat_postEphemeral(
+                channel=interaction["channel"]["id"],
+                user=user_id,
+                text=f"Ти привітався\привіталась з *_{discord_user_name}_*!"
+            )
+        except SlackApiError as e:
+            logger(f"Ошибка при отправке ephemeral сообщения: {e.response['error']}")
+            return f"Ошибка Slack API: {e.response['error']}", 500
+
+        # Возвращаем успешный статус
+        return "", 200
+        
+    else:
+        print('payload is not in payload')
+        return "Некорректный запрос", 400
+
 #------------------------------------------
 # Helper functions to send message to Discord
 #------------------------------------------
-
 
 async def slack_message_operator_async(event):
     from discord_bot import discord_client

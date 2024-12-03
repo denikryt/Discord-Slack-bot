@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request, BackgroundTasks, Header, HTTPException
-from slack_bot import slack_events
+from slack_bot import slack_events, handle_button_click
 from discord_bot import discord_client
 import logging
 import os
@@ -18,7 +18,7 @@ log_file_path = os.path.join("logs", "app.log")
 with open(log_file_path, 'w', encoding='utf-8'):
     pass  # Открываем файл в режиме записи, чтобы очистить его
 
-# Настраиваем ротацию логов
+# Настраиваем ротацию логовпше
 rotating_handler = RotatingFileHandler(
     log_file_path,
     maxBytes=10 * 1024 * 1024, 
@@ -73,6 +73,20 @@ async def log_requests(request: Request, call_next):
 async def home():
     logger.info("Home endpoint accessed")
     return 'Both bots are running'
+
+@app.post('/slack/button')
+async def button_click(
+    request: Request,
+    background_tasks: BackgroundTasks,
+):
+    form_data = await request.form()  
+    payload = form_data.get('payload')  
+    payload = json.loads(payload)
+    # result, status_code = await handle_button_click(payload)
+    
+    background_tasks.add_task(handle_button_click, payload)
+    logger.info("***Slack event processing started in the background")
+    return JSONResponse(content={}, status_code=200)
 
 @app.post('/slack/events')
 async def slack_events_handler(
