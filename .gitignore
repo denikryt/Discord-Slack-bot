@@ -8,3 +8,4 @@ http_requests.log
 /logs
 tokens.txt
 .env
+channels.json

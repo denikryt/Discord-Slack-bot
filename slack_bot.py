@@ -2,7 +2,6 @@ from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from slack_sdk.signature import SignatureVerifier
 from slack_sdk.web.async_client import AsyncWebClient
-from config import SLACK_TOKEN, SIGNING_SECRET, SLACK_CHANNELS_DICT
 import config
 import db
 import asyncio
@@ -16,9 +15,9 @@ import json
 import requests
 from datetime import datetime, timedelta
 
-slack_client = AsyncWebClient(token=SLACK_TOKEN)
-sync_slack_client = WebClient(token=SLACK_TOKEN)
-signature_verifier = SignatureVerifier(signing_secret=SIGNING_SECRET)
+slack_client = AsyncWebClient(token=config.SLACK_TOKEN)
+sync_slack_client = WebClient(token=config.SLACK_TOKEN)
+signature_verifier = SignatureVerifier(signing_secret=config.SIGNING_SECRET)
 BOT_ID = sync_slack_client.api_call("auth.test")['user_id']
 print('BOT_ID', BOT_ID)
 
@@ -168,6 +167,21 @@ async def handle_button_click(payload):
 async def slack_message_operator_async(event):
     from discord_bot import discord_client
 
+    # Функция для загрузки маппинга из JSON
+    def load_channels_mapping():
+        try:
+            file_path = os.path.abspath('channels.json')
+            with open(file_path, 'r', encoding='utf-8') as f:
+                channels_data = json.load(f)
+            slack_to_discord = {item['slack_channel_id']: item['discord_channel_id'] for item in channels_data['channels_mapping']}
+            return slack_to_discord
+        except Exception as e:
+            print(f'Error loading JSON from {file_path}: {str(e)}')
+            raise e
+    
+    # Загрузка маппинга каналов
+    SLACK_CHANNELS_DICT = load_channels_mapping()
+
     channel_id = event.get('channel')
     logger(f'channel_id: {channel_id}')
     channel_name = get_channel_name(channel_id)
@@ -179,7 +193,7 @@ async def slack_message_operator_async(event):
         discord_channel = discord_client.get_channel(int(discord_channel_id))
     else:
         logger(f'SLACK - MESSAGE FROM OTHER CHANNEL - #{channel_name}')
-        return #jsonify({"status": "channel not handled"})
+        return  # Channel not handled
         
     if 'files' in event:  # Check if the message contains files
         logger('MESSAGE WITH IMAGE')
@@ -421,7 +435,7 @@ async def download_files(file_urls):
     async with aiohttp.ClientSession() as session:
         for url, mimetype in file_urls:
             try:
-                headers = {'Authorization': f'Bearer {SLACK_TOKEN}'}
+                headers = {'Authorization': f'Bearer {config.SLACK_TOKEN}'}
                 async with session.get(url, headers=headers) as response:
                     if response.status == 200:
                         # Создаем временный файл с правильным расширением
