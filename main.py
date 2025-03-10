@@ -86,6 +86,7 @@ async def button_click(
     
     background_tasks.add_task(handle_button_click, payload)
     logger.info("***Slack event processing started in the background")
+    
     return JSONResponse(content={}, status_code=200)
 
 @app.post('/slack/events')
@@ -125,7 +126,6 @@ async def slack_events_handler(
     else:
         logger.info("***Unexpected request structure")
         return JSONResponse(content={"status": "ignored"}, status_code=200)
-
 
 # Запуск сервера FastAPI в отдельном потоке
 def run():

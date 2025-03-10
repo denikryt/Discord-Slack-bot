@@ -105,8 +105,18 @@ async def handle_button_click(payload):
         user_id = interaction["user"]["id"]
         value = action.get("value")
         discord_user_name, discord_user_id = value.split(',')
-
         emoji = ":wave:"  # Здесь можно заменить на желаемый эмодзи
+
+        # Отправляем ephemeral сообщение
+        try:
+            sync_slack_client.chat_postEphemeral(
+                channel=interaction["channel"]["id"],
+                user=user_id,
+                text=f"Ти привітався\привіталась з *_{discord_user_name}_*!"
+            )
+        except SlackApiError as e:
+            logger(f"Ошибка при отправке ephemeral сообщения: {e.response['error']}")
+            return f"Ошибка Slack API: {e.response['error']}", 500
 
         try:
             # Запрос информации о пользователе Slack
@@ -138,24 +148,11 @@ async def handle_button_click(payload):
                 return f"Ошибка отправки в Discord: {response.text}", response.status_code
             else:
                 logger(f'{user_name} waved to {discord_user_name}!')
-            
+                return "", 200
+                
         except Exception as e:
             return f"Ошибка при отправке сообщения в Discord: {e}", 500
-        
-        # Отправляем ephemeral сообщение
-        try:
-            sync_slack_client.chat_postEphemeral(
-                channel=interaction["channel"]["id"],
-                user=user_id,
-                text=f"Ти привітався\привіталась з *_{discord_user_name}_*!"
-            )
-        except SlackApiError as e:
-            logger(f"Ошибка при отправке ephemeral сообщения: {e.response['error']}")
-            return f"Ошибка Slack API: {e.response['error']}", 500
-
-        # Возвращаем успешный статус
-        return "", 200
-        
+         
     else:
         print('payload is not in payload')
         return "Некорректный запрос", 400

@@ -33,16 +33,10 @@ async def on_member_join(member):
 async def on_message(message: Message):
     if message.author == discord_client.user:
         return json.dumps({"status":"ignored"})  
-    
-    # user_name = message.author.name
-    # user_id = message.author.id  
-    # send_greet_message(user_id, user_name)
-    # return
 
     # Игнорировать сообщения типа new_member
     if message.type == discord.MessageType.new_member:
         return  # Игнорируем это сообщение, оно будет обработано в on_member_join
-    
 
     logger(f'--------------')
     logger(f'DISCORD INCOMING REQUEST: {message}') 
@@ -125,7 +119,7 @@ def send_greet_message(user_id, user_name):
                         "action_id": "greet_button",
                         "text": {
                             "type": "plain_text",
-                            "text": "Привітайся!"
+                            "text": "👋 Помахай та привітайся!"
                         },
                         "value": f"{user_name},{user_id}"  # Сохраняем имя и ID
                     }
@@ -143,7 +137,8 @@ async def send_new_message_to_slack(message: Message):
     discord_message_id = message.id
 
     try:
-        channel_to_send, text = choose_channel(message)
+        channel_to_send = choose_channel(message)
+        text = format_text(message)
     except ValueError:
         return
     
@@ -235,7 +230,8 @@ async def send_thread_message_to_slack(message: Message):
 
     if slack_parent_message_id:
         try:
-            channel_to_send, text = choose_channel(message)
+            channel_to_send = choose_channel(message)
+            text = format_text(message)
         except ValueError:
             return
 
@@ -291,21 +287,60 @@ def format_mentions(message):
         return user_message
 
 def choose_channel(message):
-    # Функция для загрузки маппинга из JSON
-    def load_channels_mapping():
-        try:
-            file_path = os.path.abspath('channels.json')
-            with open(file_path, 'r', encoding='utf-8') as f:
-                channels_data = json.load(f)
-            discord_to_slack = {item['discord_channel_id']: item['slack_channel_id'] for item in channels_data['channels_mapping']}
-            return discord_to_slack
-        except Exception as e:
-            print(f'Error loading JSON from {file_path}: {str(e)}')
-            raise e
-
     # Загрузка маппинга каналов
-    DISCORD_CHANNELS_DICT = load_channels_mapping()
+    discord_channels_dict = load_channels_mapping()
 
+    channel_id, channel_name = get_channel_id_and_name(message)
+
+    # Проверка наличия канала в словаре и создание текста для отправки
+    if channel_id in discord_channels_dict:
+        slack_channel = discord_channels_dict[channel_id]
+        return slack_channel 
+    else:
+        logger(f'DISCORD - MESSAGE FROM OTHER CHANNEL - #{channel_name}')
+        if channel_name != None:
+            channel_to_send = config.SLACK_CHANNEL_DISCORD
+            return channel_to_send
+        else:
+            logger('UNKNOWN CHANNEL NAME')
+            return
+        
+def format_text(message):
+    discord_channels_dict = load_channels_mapping()
+    channel_id, channel_name = get_channel_id_and_name(message)
+
+    if message.stickers:
+        sticker_urls = [sticker.url for sticker in message.stickers]
+        sticker_text = "\n".join(sticker_urls)
+        user_message = f":dancing-penguin:"
+    else:
+        user_message = format_mentions(message)
+
+    user_name = message.author.display_name
+
+    logger(f'Message from user: {user_name}')
+    logger(f'Message in channel: {channel_name}, ID: {channel_id}')
+
+    if channel_id in discord_channels_dict:
+        text = f'💂*_{user_name}_*\n{user_message}'
+    else:
+        text = f'💂*_{user_name}_* 🔉*_#{channel_name}_*\n{user_message}'
+
+    return text
+
+def load_channels_mapping():
+    # Функция для загрузки маппинга из JSON
+    try:
+        file_path = os.path.abspath('channels.json')
+        with open(file_path, 'r', encoding='utf-8') as f:
+            channels_data = json.load(f)
+        discord_to_slack = {item['discord_channel_id']: item['slack_channel_id'] for item in channels_data['channels_mapping']}
+        return discord_to_slack
+    except Exception as e:
+        print(f'Error loading JSON from {file_path}: {str(e)}')
+        raise e
+
+def get_channel_id_and_name(message):
     # Получаем имя канала
     if hasattr(message.channel, 'parent'):
         channel_name = str(message.channel.parent)
@@ -314,26 +349,7 @@ def choose_channel(message):
         channel_name = message.channel.name
         channel_id = str(message.channel.id)
 
-    user_message = format_mentions(message)
-    user_name = message.author.display_name
-
-    logger(f'Message from user: {user_name}')
-    logger(f'Message in channel: {channel_name}, ID: {channel_id}')
-
-    # Проверка наличия канала в словаре и создание текста для отправки
-    if channel_id in DISCORD_CHANNELS_DICT:
-        slack_channel = DISCORD_CHANNELS_DICT[channel_id]
-        text = f'💂*_{user_name}_*\n{user_message}'
-        return slack_channel, text 
-    else:
-        logger(f'DISCORD - MESSAGE FROM OTHER CHANNEL - #{channel_name}')
-        if channel_name != None:
-            channel_to_send = config.SLACK_CHANNEL_DISCORD
-            text = f'💂*_{user_name}_* 🔉*_#{channel_name}_*\n{user_message}'
-            return channel_to_send, text
-        else:
-            logger('UNKNOWN CHANNEL NAME')
-            return
+    return channel_id, channel_name
 
 async def collect_files(message):
     # Download images to disk
