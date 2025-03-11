@@ -25,9 +25,7 @@ async def on_ready():
 async def on_member_join(member):
     logger('New member!')
 
-    user_name = member.name
-    user_id = member.id
-    send_greet_message(user_id, user_name)
+    send_greet_message(member)
 
 @discord_client.event
 async def on_message(message: Message):
@@ -35,7 +33,7 @@ async def on_message(message: Message):
         return json.dumps({"status":"ignored"})  
 
     # Игнорировать сообщения типа new_member
-    if message.type == discord.MessageType.new_member:
+    if message.type == discord.MessageType.new_member:      
         return  # Игнорируем это сообщение, оно будет обработано в on_member_join
 
     logger(f'--------------')
@@ -76,23 +74,11 @@ async def on_message(message: Message):
 # Helper functions to send message to Slack
 #------------------------------------------
 
-def send_greet_message(user_id, user_name):
-    import json
+def send_greet_message(message):
     from slack_bot import sync_slack_client
 
-    # Функция для загрузки ID канала из JSON
-    def get_channel_id_by_name(platform, channel_name):
-        try:
-            file_path = os.path.abspath('channels.json')
-            with open(file_path, 'r', encoding='utf-8') as f:
-                channels_data = json.load(f)
-            for channel in channels_data['channels_mapping']:
-                if channel['name'] == channel_name:
-                    return channel[platform]
-            return None
-        except Exception as e:
-            print(f'Error loading JSON from {file_path}: {str(e)}')
-            raise e
+    user_name = message.name
+    user_id = message.id
 
     # Получаем ID канала для "новенькі"
     slack_channel_id = get_channel_id_by_name("slack_channel_id", "новенькі")
@@ -131,6 +117,20 @@ def send_greet_message(user_id, user_name):
     # Отправляем сообщение в Slack
     response = sync_slack_client.chat_postMessage(**slack_message)
     return response
+
+def get_channel_id_by_name(platform, channel_name):
+    # Функция для загрузки ID канала из JSON
+    try:
+        file_path = os.path.abspath('channels.json')
+        with open(file_path, 'r', encoding='utf-8') as f:
+            channels_data = json.load(f)
+        for channel in channels_data['channels_mapping']:
+            if channel['name'] == channel_name:
+                return channel[platform]
+        return None
+    except Exception as e:
+        print(f'Error loading JSON from {file_path}: {str(e)}')
+        raise e
 
 async def send_new_message_to_slack(message: Message):
     from slack_bot import sync_slack_client
