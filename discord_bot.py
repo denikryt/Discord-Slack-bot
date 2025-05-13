@@ -120,21 +120,15 @@ def set_last_message_user_id(message):
     global last_message_user_id
 
     user_id = str(message.author.id)
+    channel_id = str(message.channel.id)
 
-    if hasattr(message.channel, 'parent'):
-        parent_message_id = str(message.channel.parent.id)
-        last_message_user_id[parent_message_id] = user_id
-    else:
-        channel_id = str(message.channel.id)
-        last_message_user_id[channel_id] = user_id
-
-    channel_name = message.channel.name if hasattr(message.channel, 'name') else message.channel.parent.name
-    user = discord_client.get_user(int(user_id))
-    user_name = user.name if user else "Unknown User"
-
-    # logger(f'Last message user ID set: {user_name} for channel: {channel_name}')
-    logger(f'set_last_message_user_id--> Last message user ID dict: {last_message_user_id}')
+    last_message_user_id[channel_id] = {'user_id': user_id, 'timestamp': message.created_at}
     
+    # --- printing for debugging ---
+    channel_name = message.channel.name if hasattr(message.channel, 'name') else message.channel.parent.name
+    user_name = message.author.display_name
+    logger(f'Last message user ID set: {user_name} for channel: {channel_name}')
+    # logger(f'Last message user ID dict: \n{last_message_user_id}')
 
 def send_greet_message(message):
     from slack_bot import sync_slack_client
