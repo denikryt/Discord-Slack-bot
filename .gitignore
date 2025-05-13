@@ -9,3 +9,4 @@ http_requests.log
 tokens.txt
 .env
 channels.json
+emoji_avatars.json

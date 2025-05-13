@@ -11,11 +11,15 @@ import time
 import re
 import json
 import logging
+import datetime
 
 intents = Intents.default()
 intents.message_content = True 
 intents.members = True
 discord_client = Client(intents=intents)
+
+# словарь для хранения имени пользователя последнего сообщения в канале 
+last_message_user_id = {}
 
 @discord_client.event
 async def on_ready():
@@ -30,38 +34,46 @@ async def on_member_join(member):
 @discord_client.event
 async def on_message(message: Message):
     if message.author == discord_client.user:
+        update_last_message_user_id()
+        set_last_message_user_id(message)
+
+        logger('Message from bot')
         return json.dumps({"status":"ignored"})  
 
     # Игнорировать сообщения типа new_member
     if message.type == discord.MessageType.new_member:      
         return  # Игнорируем это сообщение, оно будет обработано в on_member_join
 
-    logger(f'--------------')
-    logger(f'DISCORD INCOMING REQUEST: {message}') 
+    # logger(f'--------------')
+    # logger(f'DISCORD INCOMING REQUEST: {message}') 
 
     # Проверяем тип канала
     if isinstance(message.channel, discord.TextChannel):
         logger(f'-------DISCORD - NEW MESSAGE-------')
         logger(f'---> {message.content}')
+
+        update_last_message_user_id()
         result = await send_new_message_to_slack(message)
+        set_last_message_user_id(message)
         return result
 
     elif isinstance(message.channel, discord.Thread):
         if message.type == MessageType.default:
             logger(f'-------DISCORD - THREAD MESSAGE-------')
             logger(f'---> {message.content}')
+            
+            update_last_message_user_id()
             result = await send_thread_message_to_slack(message)
+            set_last_message_user_id(message)
             return result
 
         elif message.type == MessageType.reply:
             logger(f'-------DISCORD - REPLY MESSAGE IN THREAD-------')
             logger(f'---> {message.content}')
             
-            # Получение ссылки на сообщение, на которое был дан ответ
-            replied_message = await message.channel.fetch_message(message.reference.message_id)
-            logger(f'REPLIED MESSAGE: {replied_message.content}')
-
+            update_last_message_user_id()
             result = await send_thread_message_to_slack(message)
+            set_last_message_user_id(message)
             return result
         else:
             logger('UNKNOWN ACTION IN DISCORD THREAD')
@@ -73,6 +85,56 @@ async def on_message(message: Message):
 #------------------------------------------
 # Helper functions to send message to Slack
 #------------------------------------------
+
+def update_last_message_user_id():
+    # delete expired object by timestamp after 1 minute 
+    global last_message_user_id
+
+    for key in list(last_message_user_id.keys()):
+        if last_message_user_id[key]['timestamp'] < (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=1)):
+            del last_message_user_id[key]
+
+            # --- printing for debugging ---
+            channel_name = key
+            logger(f'update_last_message_user_id--> Last message user ID deleted for channel: {channel_name}')
+
+def check_last_message_user_id(message):
+    global last_message_user_id
+
+    channel_id, channel_name = get_channel_id_and_name(message)
+    message_author_id = str(message.author.id)
+
+    if channel_id in last_message_user_id:
+        user_id = last_message_user_id[channel_id]['user_id']
+        if user_id == message_author_id:
+            logger(f'check_last_message_user_id--> User ID is the same: {user_id}')
+            return True
+        else:
+            logger(f'check_last_message_user_id--> User ID is different: {user_id} != {message.author.id}')
+            return False
+    else:
+        logger(f'check_last_message_user_id--> No channel found: {channel_id}')
+        return False
+
+def set_last_message_user_id(message):
+    global last_message_user_id
+
+    user_id = str(message.author.id)
+
+    if hasattr(message.channel, 'parent'):
+        parent_message_id = str(message.channel.parent.id)
+        last_message_user_id[parent_message_id] = user_id
+    else:
+        channel_id = str(message.channel.id)
+        last_message_user_id[channel_id] = user_id
+
+    channel_name = message.channel.name if hasattr(message.channel, 'name') else message.channel.parent.name
+    user = discord_client.get_user(int(user_id))
+    user_name = user.name if user else "Unknown User"
+
+    # logger(f'Last message user ID set: {user_name} for channel: {channel_name}')
+    logger(f'set_last_message_user_id--> Last message user ID dict: {last_message_user_id}')
+    
 
 def send_greet_message(message):
     from slack_bot import sync_slack_client
@@ -322,7 +384,9 @@ def format_text(message):
     logger(f'Message in channel: {channel_name}, ID: {channel_id}')
 
     if channel_id in discord_channels_dict:
-        text = f'💂*_{user_name}_*\n{user_message}'
+        text = user_message
+        if not check_last_message_user_id(message):
+            text = f'💂*_{user_name}_*\n{text}'
     else:
         text = f'💂*_{user_name}_* 🔉*_#{channel_name}_*\n{user_message}'
 
