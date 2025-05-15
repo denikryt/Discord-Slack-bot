@@ -18,8 +18,8 @@ intents.message_content = True
 intents.members = True
 discord_client = Client(intents=intents)
 
-# словарь для хранения имени пользователя последнего сообщения в канале 
-last_message_user_id = {}
+last_message_user_id = config.LAST_DISCORD_CHANNEL_MESSAGE_USER_ID
+config.DISCORD_BOT_ID = discord_client.user.id
 
 @discord_client.event
 async def on_ready():

@@ -21,6 +21,7 @@ signature_verifier = SignatureVerifier(signing_secret=config.SIGNING_SECRET)
 BOT_ID = sync_slack_client.api_call("auth.test")['user_id']
 print('BOT_ID', BOT_ID)
 
+config.SLACK_BOT_ID = BOT_ID
 processed_requests = {}
 processed_files = set()
 file_timestamps = {}  

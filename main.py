@@ -106,7 +106,7 @@ async def slack_events_handler(
 
     # logger.info(f'BOT_ID: {BOT_ID}')
     event_data = await request.json()
-    # logger.info(f'SLACK REQUEST:\n{event_data}')
+    logger.info(f'SLACK REQUEST:\n{event_data}')
 
     # Проверка типа запроса на url_verification
     if event_data.get('type') == 'url_verification':
