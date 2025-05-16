@@ -5,7 +5,7 @@ import logging
 # MongoDB configuration
 mongo_client = MongoClient(MONGO_DB)  
 db = mongo_client['HACKLAB']
-messages_collection = db['Slack-Discord messages']
+messages_collection = db['Slack-Discord messages-test']
 
 def save_message_to_db(slack_message_id, discord_message_id):
     messages_collection.insert_one({
@@ -23,6 +23,14 @@ def get_discord_message_id(slack_message_id):
     logger("Discord message ID not found for this Slack message ID")
     raise KeyError("Discord message ID not found for this Slack message ID")
 
+def get_slack_message_id(discord_message_id):
+    result = messages_collection.find_one({"discord_message_id": discord_message_id})
+    if result:
+        logger("Slack message ID have been found for this Discord message ID")
+        return result['slack_message_id']
+    logger("Slack message ID not found for this Discord message ID")
+    raise KeyError("Slack message ID not found for this Discord message ID")
+
 def logger(log_text):
-    print(log_text)
+    print(log_text) 
     logging.info(log_text)

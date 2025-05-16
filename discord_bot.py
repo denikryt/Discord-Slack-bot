@@ -18,11 +18,13 @@ intents.message_content = True
 intents.members = True
 discord_client = Client(intents=intents)
 
-last_message_user_id = config.LAST_DISCORD_CHANNEL_MESSAGE_USER_ID
-config.DISCORD_BOT_ID = discord_client.user.id
+#------------------------------------------
+# Event handlers for Discord
+#------------------------------------------
 
 @discord_client.event
-async def on_ready():
+async def on_ready() -> None:
+    config.DISCORD_BOT_ID = discord_client.user.id
     logger(f'{discord_client.user} is now running!')
 
 @discord_client.event
@@ -40,14 +42,12 @@ async def on_message(message: Message):
         logger('Message from bot')
         return json.dumps({"status":"ignored"})  
 
-    # Игнорировать сообщения типа new_member
     if message.type == discord.MessageType.new_member:      
-        return  # Игнорируем это сообщение, оно будет обработано в on_member_join
+        return  
 
     # logger(f'--------------')
     # logger(f'DISCORD INCOMING REQUEST: {message}') 
-
-    # Проверяем тип канала
+    
     if isinstance(message.channel, discord.TextChannel):
         logger(f'-------DISCORD - NEW MESSAGE-------')
         logger(f'---> {message.content}')
@@ -83,52 +83,73 @@ async def on_message(message: Message):
         return json.dumps({"status":"unknown"})  
  
 #------------------------------------------
-# Helper functions to send message to Slack
+# Helper functions to manage last message user ID
 #------------------------------------------
 
 def update_last_message_user_id():
     # delete expired object by timestamp after 1 minute 
-    global last_message_user_id
-
-    for key in list(last_message_user_id.keys()):
-        if last_message_user_id[key]['timestamp'] < (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=1)):
-            del last_message_user_id[key]
+    for key in list(config.DISCORD_CHANNEL_LAST_USER.keys()):
+        if config.DISCORD_CHANNEL_LAST_USER[key]['timestamp'] < (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=5)):
+            del config.DISCORD_CHANNEL_LAST_USER[key]
 
             # --- printing for debugging ---
             channel_name = key
-            logger(f'update_last_message_user_id--> Last message user ID deleted for channel: {channel_name}')
+            logger(f'Last message user ID deleted for discord channel: {channel_name}')
+    logger(f'Updated discord last message user ID dict: \n{json.dumps(config.DISCORD_CHANNEL_LAST_USER, indent=2, default=str)}')
+    return
 
-def check_last_message_user_id(message):
-    global last_message_user_id
-
-    channel_id, channel_name = get_channel_id_and_name(message)
+def check_last_message_user_id(message, slack_channel_id):
+    # Check if the last message user ID is the same as the current message author ID
+    discord_channel_id = str(message.channel.id)
     message_author_id = str(message.author.id)
 
-    if channel_id in last_message_user_id:
-        user_id = last_message_user_id[channel_id]['user_id']
+    if discord_channel_id in config.DISCORD_CHANNEL_LAST_USER:
+        user_id = config.DISCORD_CHANNEL_LAST_USER[discord_channel_id]['user_id']
+        # print(f'Last message user ID: {user_id}')
+        # print(f'Current message author ID: {message_author_id}')
         if user_id == message_author_id:
-            logger(f'check_last_message_user_id--> User ID is the same: {user_id}')
-            return True
+            logger(f'In this discord channel, the last message was sent by the same user: {user_id}')
+
+            if slack_channel_id in config.SLACK_CHANNEL_LAST_USER:
+                last_slack_channel_user_id = config.SLACK_CHANNEL_LAST_USER[slack_channel_id]['user_id']
+                if last_slack_channel_user_id == config.SLACK_BOT_ID:
+                    logger(f'Slack bot was the last user: {user_id}')
+                    return True
+                else:
+                    logger(f'Slack bot was not the last user: {user_id}')
+                    return False
+            else:
+                if config.DISCORD_CHANNEL_LAST_USER[discord_channel_id]['timestamp'] > (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=1)):
+                    # Check if the last message was sent less than 1 second ago
+                    logger(f'New message was sent after less than 1 second from last message')
+                    return True
+                else:
+                    logger(f'No channel found in SLACK_CHANNEL_LAST_USER: \n{json.dumps(config.SLACK_CHANNEL_LAST_USER, indent=2, default=str)}')
+                    return False
         else:
-            logger(f'check_last_message_user_id--> User ID is different: {user_id} != {message.author.id}')
+            logger(f'In this discord channel, the last message was sent by a different user: {user_id}')
             return False
     else:
-        logger(f'check_last_message_user_id--> No channel found: {channel_id}')
+        logger(f'No channel {discord_channel_id} found in DISCORD_CHANNEL_LAST_USER')
         return False
 
 def set_last_message_user_id(message):
-    global last_message_user_id
-
+    # Set the last message user ID for the current channel
     user_id = str(message.author.id)
     channel_id = str(message.channel.id)
 
-    last_message_user_id[channel_id] = {'user_id': user_id, 'timestamp': message.created_at}
+    config.DISCORD_CHANNEL_LAST_USER[channel_id] = {'user_id': user_id, 'timestamp': datetime.datetime.now(datetime.timezone.utc)}
     
     # --- printing for debugging ---
     channel_name = message.channel.name if hasattr(message.channel, 'name') else message.channel.parent.name
     user_name = message.author.display_name
-    logger(f'Last message user ID set: {user_name} for channel: {channel_name}')
-    # logger(f'Last message user ID dict: \n{last_message_user_id}')
+    logger(f'Discord Last message user ID set: {user_name} for channel: {channel_name}')
+    logger(f'Discord Last message user ID dict: \n{json.dumps(config.DISCORD_CHANNEL_LAST_USER, indent=2, default=str)}')
+    return
+
+#------------------------------------------
+# Helper functions to send greeting message
+#------------------------------------------
 
 def send_greet_message(message):
     from slack_bot import sync_slack_client
@@ -136,7 +157,6 @@ def send_greet_message(message):
     user_name = message.name
     user_id = message.id
 
-    # Получаем ID канала для "новенькі"
     slack_channel_id = get_channel_id_by_name("slack_channel_id", "новенькі")
     if not slack_channel_id:
         raise ValueError('Channel with name "новенькі" not found in channels.json')
@@ -170,12 +190,11 @@ def send_greet_message(message):
         ]
     }
 
-    # Отправляем сообщение в Slack
     response = sync_slack_client.chat_postMessage(**slack_message)
     return response
 
 def get_channel_id_by_name(platform, channel_name):
-    # Функция для загрузки ID канала из JSON
+    # Function to get channel ID by name from JSON
     try:
         file_path = os.path.abspath('channels.json')
         with open(file_path, 'r', encoding='utf-8') as f:
@@ -187,14 +206,19 @@ def get_channel_id_by_name(platform, channel_name):
     except Exception as e:
         print(f'Error loading JSON from {file_path}: {str(e)}')
         raise e
+    
+#------------------------------------------
+# Helper functions to send messages to Slack
+#------------------------------------------
 
 async def send_new_message_to_slack(message: Message):
+    # Function to send a new message to Slack
     from slack_bot import sync_slack_client
     discord_message_id = message.id
 
     try:
         channel_to_send = choose_channel(message)
-        text = format_text(message)
+        text = format_text(message, channel_to_send)
     except ValueError:
         return
     
@@ -218,7 +242,7 @@ async def send_new_message_to_slack(message: Message):
         logger('MESSAGE WITHOUT FILES')
 
         response = sync_slack_client.chat_postMessage(
-            channel=channel_to_send,  # Укажите ID канала Slack, куда отправлять
+            channel=channel_to_send,  
             text=text
         ) 
         slack_message_id = response['ts']
@@ -237,7 +261,7 @@ async def send_new_message_to_slack(message: Message):
         return json.dumps({"status":"false"})
 
 def wait_message_ID(sync_slack_client, response):
-# Polling the files.info API to get the 'shares' property with ts and thread_ts
+    # Polling the files.info API to get the 'shares' property with ts and thread_ts
     file_id = response['files'][0]['id']
 
     while True:
@@ -280,14 +304,22 @@ async def send_thread_message_to_slack(message: Message):
   # Получаем ID родительского сообщения
     discord_parent_message = await message.channel.parent.fetch_message(message.channel.id)
     discord_parent_message_id = discord_parent_message.id
+    channel_id = str(message.channel.id)
 
-    result = db.messages_collection.find_one({"discord_message_id": discord_parent_message_id})
-    slack_parent_message_id = result['slack_message_id'] if result else None
+    # logger(f'Parent message ID: {discord_parent_message_id}')
+    # logger(f'Channel ID: {channel_id}')
+
+    try:
+        slack_parent_message_id = db.get_slack_message_id(discord_parent_message_id)
+        logger(f'Slack parent message ID: {slack_parent_message_id}')
+    except KeyError:
+        logger(f'Slack message ID not found for Discord message ID: {discord_parent_message_id}')
+        return
 
     if slack_parent_message_id:
         try:
             channel_to_send = choose_channel(message)
-            text = format_text(message)
+            text = format_text(message, slack_parent_message_id)
         except ValueError:
             return
 
@@ -361,13 +393,11 @@ def choose_channel(message):
             logger('UNKNOWN CHANNEL NAME')
             return
         
-def format_text(message):
+def format_text(message, channel_to_check_id=None):
     discord_channels_dict = load_channels_mapping()
     channel_id, channel_name = get_channel_id_and_name(message)
 
     if message.stickers:
-        sticker_urls = [sticker.url for sticker in message.stickers]
-        sticker_text = "\n".join(sticker_urls)
         user_message = f":dancing-penguin:"
     else:
         user_message = format_mentions(message)
@@ -379,7 +409,7 @@ def format_text(message):
 
     if channel_id in discord_channels_dict:
         text = user_message
-        if not check_last_message_user_id(message):
+        if not check_last_message_user_id(message, channel_to_check_id):
             text = f'💂*_{user_name}_*\n{text}'
     else:
         text = f'💂*_{user_name}_* 🔉*_#{channel_name}_*\n{user_message}'
