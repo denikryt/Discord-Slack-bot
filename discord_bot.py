@@ -116,8 +116,13 @@ def check_last_message_user_id(message, slack_channel_id):
                     logger(f'Slack bot was the last user: {user_id}')
                     return True
                 else:
-                    logger(f'Slack bot was not the last user: {user_id}')
-                    return False
+                    if config.DISCORD_CHANNEL_LAST_USER[discord_channel_id]['timestamp'] > (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=1)):
+                        # Check if the last message was sent less than 1 second ago
+                        logger(f'New message was sent after less than 1 second from last message')
+                        return True
+                    else:
+                        logger(f'Slack bot was not the last user: {user_id}')
+                        return False
             else:
                 if config.DISCORD_CHANNEL_LAST_USER[discord_channel_id]['timestamp'] > (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=1)):
                     # Check if the last message was sent less than 1 second ago
