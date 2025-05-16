@@ -137,10 +137,6 @@ async def slack_message_operator_async(event):
 
 def check_last_message_user_id(current_user_id, slack_channel_id, discord_channel_id):
     # Function to check if the last message user ID is the same as the current user ID
-    # print(f'current_user_id: {current_user_id}')
-    # print(f'slack_channel_id: {slack_channel_id}')
-    # print(f'discord_channel_id: {discord_channel_id}')
-
     if slack_channel_id in config.SLACK_CHANNEL_LAST_USER:
         slack_channel_last_user_id = config.SLACK_CHANNEL_LAST_USER[slack_channel_id]['user_id']
         if slack_channel_last_user_id == current_user_id:

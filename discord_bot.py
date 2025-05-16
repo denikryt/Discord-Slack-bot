@@ -109,10 +109,10 @@ def check_last_message_user_id(message, slack_channel_id):
             logger(f'In this discord channel, the last message was sent by the same user: {user_id}')
 
             if slack_channel_id in config.SLACK_CHANNEL_LAST_USER:
-                last_slack_channel_user_id = config.SLACK_CHANNEL_LAST_USER[slack_channel_id]['user_id']
-                logger(f'Last message user ID in slack channel: {last_slack_channel_user_id}')
+                slack_channel_last_user_id = config.SLACK_CHANNEL_LAST_USER[slack_channel_id]['user_id']
+                logger(f'Last message user ID in slack channel: {slack_channel_last_user_id}')
                 logger(f'SLACK_BOT_ID: {config.SLACK_BOT_ID}')
-                if last_slack_channel_user_id == config.SLACK_BOT_ID:
+                if slack_channel_last_user_id == config.SLACK_BOT_ID:
                     logger(f'Slack bot was the last user: {user_id}')
                     return True
                 else:
