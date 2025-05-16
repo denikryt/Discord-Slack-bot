@@ -105,13 +105,13 @@ def check_last_message_user_id(message, slack_channel_id):
 
     if discord_channel_id in config.DISCORD_CHANNEL_LAST_USER:
         user_id = config.DISCORD_CHANNEL_LAST_USER[discord_channel_id]['user_id']
-        # print(f'Last message user ID: {user_id}')
-        # print(f'Current message author ID: {message_author_id}')
         if user_id == message_author_id:
             logger(f'In this discord channel, the last message was sent by the same user: {user_id}')
 
             if slack_channel_id in config.SLACK_CHANNEL_LAST_USER:
                 last_slack_channel_user_id = config.SLACK_CHANNEL_LAST_USER[slack_channel_id]['user_id']
+                logger(f'Last message user ID in slack channel: {last_slack_channel_user_id}')
+                logger(f'SLACK_BOT_ID: {config.SLACK_BOT_ID}')
                 if last_slack_channel_user_id == config.SLACK_BOT_ID:
                     logger(f'Slack bot was the last user: {user_id}')
                     return True
@@ -129,7 +129,7 @@ def check_last_message_user_id(message, slack_channel_id):
                     logger(f'New message was sent after less than 1 second from last message')
                     return True
                 else:
-                    logger(f'No channel found in SLACK_CHANNEL_LAST_USER: \n{json.dumps(config.SLACK_CHANNEL_LAST_USER, indent=2, default=str)}')
+                    logger(f'No channel {slack_channel_id} found in SLACK_CHANNEL_LAST_USER: \n{json.dumps(config.SLACK_CHANNEL_LAST_USER, indent=2, default=str)}')
                     return False
         else:
             logger(f'In this discord channel, the last message was sent by a different user: {user_id}')

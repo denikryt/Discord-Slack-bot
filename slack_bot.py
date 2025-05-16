@@ -148,17 +148,27 @@ def check_last_message_user_id(current_user_id, slack_channel_id, discord_channe
             
             if str(discord_channel_id) in config.DISCORD_CHANNEL_LAST_USER: 
                 discord_channel_last_user_id = config.DISCORD_CHANNEL_LAST_USER[str(discord_channel_id)]['user_id']
-                logger(f'Last message user ID in discord channel: {discord_channel_last_user_id}, type: {type(discord_channel_last_user_id)}')
-                logger(f'Config DISCORD_BOT_ID: {config.DISCORD_BOT_ID}, type: {type(config.DISCORD_BOT_ID)}')
+                logger(f'Last message user ID in discord channel: {discord_channel_last_user_id}')
+                logger(f'DISCORD_BOT_ID: {config.DISCORD_BOT_ID}')
                 if discord_channel_last_user_id == str(config.DISCORD_BOT_ID):
                     logger(f'Discord bot was the last user: {discord_channel_last_user_id}')
                     return True
                 else:
-                    logger(f'Discord bot was not the last user: {discord_channel_last_user_id}')
-                    return False
+                    if config.SLACK_CHANNEL_LAST_USER[slack_channel_id]['timestamp'] > (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=1)):
+                        # Check if the last message was sent less than 1 second ago
+                        logger(f'New message was sent after less than 1 second from last message')
+                        return True
+                    else:
+                        logger(f'Discord bot was not the last user: {discord_channel_last_user_id}')
+                        return False
             else:
-                logger(f'No channel {discord_channel_id} found in discord_channel_last_user: \n{json.dumps(config.DISCORD_CHANNEL_LAST_USER, indent=2, default=str)}')
-                return False
+                if config.SLACK_CHANNEL_LAST_USER[slack_channel_id]['timestamp'] > (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=1)):
+                    # Check if the last message was sent less than 1 second ago
+                    logger(f'New message was sent after less than 1 second from last message')
+                    return True
+                else:
+                    logger(f'No channel {discord_channel_id} found in discord_channel_last_user: \n{json.dumps(config.DISCORD_CHANNEL_LAST_USER, indent=2, default=str)}')
+                    return False
         else:
             logger(f'In this slack channel, the last message was sent by a different user: {slack_channel_last_user_id}')
             return False
