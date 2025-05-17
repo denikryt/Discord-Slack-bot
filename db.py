@@ -1,11 +1,11 @@
 from pymongo import MongoClient
-from config import MONGO_DB
 import logging
+import config
 
 # MongoDB configuration
-mongo_client = MongoClient(MONGO_DB)  
+mongo_client = MongoClient(config.MONGO_DB)  
 db = mongo_client['HACKLAB']
-messages_collection = db['Slack-Discord messages-test']
+messages_collection = db[config.DB_COLLECTION]
 
 def save_message_to_db(slack_message_id, discord_message_id):
     messages_collection.insert_one({
