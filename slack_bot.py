@@ -188,7 +188,6 @@ def update_last_message_user_id():
             del config.SLACK_CHANNEL_LAST_USER[channel_id]
 
             # --- printing for debugging ---
-            channel_name = get_channel_name(channel_id)
             logger(f'Last message user ID deleted for slack channel: {channel_id}')
     logger(f'Updated slack last message user ID dict: \n{json.dumps(config.SLACK_CHANNEL_LAST_USER, indent=2, default=str)}')
 

@@ -96,10 +96,9 @@ def update_last_message_user_id():
             channel_name = key
             logger(f'Last message user ID deleted for discord channel: {channel_name}')
     logger(f'Updated discord last message user ID dict: \n{json.dumps(config.DISCORD_CHANNEL_LAST_USER, indent=2, default=str)}')
-    return
 
 def check_last_message_user_id(message, slack_channel_id):
-    # Check if the last message user ID is the same as the current message author ID
+    # Function to check if the last message user ID is the same as the current user ID
     discord_channel_id = str(message.channel.id)
     message_author_id = str(message.author.id)
 
@@ -301,7 +300,6 @@ def wait_message_ID(sync_slack_client, response):
             time.sleep(1)  # Wait 1 second before polling again
         except SlackApiError as e:
             logger(f"""Error retrieving file info: {e.response['error']}""")
-            exit()
 
 async def send_thread_message_to_slack(message: Message):
     from slack_bot import sync_slack_client
