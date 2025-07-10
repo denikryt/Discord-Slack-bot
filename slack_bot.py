@@ -26,14 +26,39 @@ processed_files = set()
 file_timestamps = {}  
 EXPIRATION_TIME = 300   
 
-
 async def slack_events(event_data):
-# Function to handle Slack events
+    # Function to handle Slack events
     global processed_files
 
     event = event_data.get("event", {})
     event_id = event.get('client_msg_id') or event_data.get("event_id")
     logger(f'EVENT_ID: {event_id}')
+
+    # Handle user join event
+    if event.get("type") == "team_join":
+        user_data = get_user_data(event)
+        logger(f"New user joined Slack workspace: {user_data['user_name']}")
+        # Notify in Discord about the new user
+        try:
+            data = {
+                "username": "Slack-bot",
+                "avatar_url": config.BOT_AVATAR_URL,
+                "content": f"{user_data['user_name']} has joined Slack workspace!"
+            }
+            headers = {"Content-Type": "application/json"}
+            requests.post(config.DISCORD_WELCOME_TO_SLACK_WEBHOOK_URL, data=json.dumps(data), headers=headers)
+        except Exception as e:
+            logger(f"Error notifying Discord about new user: {e}")
+        return
+
+    # Handle user joining a channel event
+    if event.get("type") == "message" and event.get("subtype") == "channel_join":
+        user_id = event.get("user")
+        channel_id = event.get("channel")
+        user_name = get_user_name(user_id)
+        channel_name = get_channel_name(channel_id)
+        logger(f"User {user_name} joined channel {channel_name}!")
+        return
 
     if event_id and not check_request_existence(event_id):
         logger('New request!')
@@ -324,10 +349,10 @@ def logger(log_text):
 async def send_thread_message_to_discord_async(event, discord_channel, file_paths):
     slack_message_id = event.get('thread_ts')
     discord_message_id = db.get_discord_message_id(slack_message_id)    
-    user_text, user_name = get_user_data(event)
-    user_id = event.get('user')
-    logger(f'Message from: {user_name}')
-    
+    user_data = get_user_data(event)
+    # user_id = event.get('user')
+    logger(f'Message from: {user_data["user_name"]}')
+
     if discord_channel:
         try:
             parent_message = await discord_channel.fetch_message(discord_message_id)
@@ -337,10 +362,10 @@ async def send_thread_message_to_discord_async(event, discord_channel, file_path
 
         if parent_message:
             update_last_message_user_id()
-            if not check_last_message_user_id(current_user_id=user_id, slack_channel_id=slack_message_id, discord_channel_id=discord_message_id):
-                text = f'**💂_{user_name}_**\n{user_text}'
+            if not check_last_message_user_id(current_user_id=user_data["user_id"], slack_channel_id=slack_message_id, discord_channel_id=discord_message_id):
+                text = f'**💂_{user_data["user_name"]}_**\n{user_data["user_text"]}'
             else:
-                text = user_text
+                text = user_data["user_text"]
 
             set_last_message_user_id(user_id=event.get('user'), channel_id=event.get('thread_ts'))
 
@@ -429,19 +454,18 @@ async def send_thread_message_with_files(file_paths, thread, text):
 
 async def send_new_message_to_discord_async(event, discord_channel, slack_message_id, file_paths):
     try:
-        user_text, user_name = get_user_data(event)
-        user_id = event.get('user')
+        user_data = get_user_data(event)
         slack_channel_id = event.get('channel')
-        logger(f'Message from {user_name}')
+        logger(f'Message from {user_data["user_name"]}')
 
         if discord_channel:
             discord_channel_id = get_discord_channel_by_slack_channel_id(slack_channel_id)
                 
             update_last_message_user_id()
-            if not check_last_message_user_id(current_user_id=user_id, slack_channel_id=slack_channel_id, discord_channel_id=discord_channel_id):
-                text = f'**💂_{user_name}_**\n{user_text}'
+            if not check_last_message_user_id(current_user_id=user_data["user_id"], slack_channel_id=slack_channel_id, discord_channel_id=discord_channel_id):
+                text = f'**💂_{user_data["user_name"]}_**\n{user_data["user_text"]}'
             else:
-                text = user_text
+                text = user_data["user_text"]
 
             set_last_message_user_id(user_id=event.get('user'), channel_id=event.get('channel'))
 
@@ -702,7 +726,7 @@ def get_user_data(event):
     user_text = format_mentions(user_text)
     user_info = sync_slack_client.users_info(user=user_id)['user']
     user_name = user_info['profile']['display_name'] or user_info['real_name']
-    return user_text, user_name
+    return {'user_name': user_name, 'user_text': user_text, 'user_id': user_id}
 
 def get_user_name(user_id):
     try:
